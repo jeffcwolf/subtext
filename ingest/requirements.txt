@@ -1,0 +1,12 @@
+# Subtext ingestion pipeline dependencies
+# Python >= 3.11
+
+# HuggingFace dataset loading
+datasets>=5.0.0
+
+# Analytical store
+duckdb>=1.0.0
+
+# Sentiment (Loughran-McDonald) work in later steps reads the master
+# dictionary CSV directly with the stdlib, so no extra NLP deps are needed
+# for the MVP. pandas is pulled in transitively by `datasets`.
