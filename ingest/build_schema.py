@@ -25,7 +25,10 @@ DB_PATH = DATA_DIR / "subtext.duckdb"
 SCHEMA = """
 CREATE OR REPLACE TABLE companies (
     ticker VARCHAR PRIMARY KEY,
-    name VARCHAR
+    name VARCHAR,
+    sector VARCHAR,       -- from glopardo (nullable; coverage doesn't fully overlap)
+    industry VARCHAR,     -- from glopardo
+    cik VARCHAR           -- SEC CIK from glopardo (hook for Edgar cross-reference)
 );
 
 CREATE OR REPLACE TABLE transcripts (
@@ -58,6 +61,18 @@ CREATE OR REPLACE TABLE sentiment_facts (
     total_words INTEGER,
     net_sentiment FLOAT
 );
+
+-- glopardo financial metrics, matched per transcript by ticker + nearest
+-- earnings date (see load_glopardo.py). Valuation/estimate figures, not
+-- beat/miss: trailing-12m EPS, forward-12m EPS estimate, forward P/E.
+CREATE OR REPLACE TABLE financials (
+    transcript_id VARCHAR PRIMARY KEY,
+    ticker VARCHAR,
+    earnings_date DATE,
+    eps_ttm DOUBLE,
+    eps_fwd DOUBLE,
+    pe_fwd DOUBLE
+);
 """
 
 
@@ -69,7 +84,7 @@ def main() -> int:
         con.execute(SCHEMA)
         tables = [r[0] for r in con.execute("SHOW TABLES").fetchall()]
         print(f"Tables now present: {tables}")
-        for table in ("companies", "transcripts", "utterances", "sentiment_facts"):
+        for table in ("companies", "transcripts", "utterances", "sentiment_facts", "financials"):
             cols = con.execute(
                 "SELECT column_name, data_type FROM information_schema.columns "
                 "WHERE table_name = ? ORDER BY ordinal_position",

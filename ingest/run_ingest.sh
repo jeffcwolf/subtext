@@ -49,6 +49,9 @@ step "Step 2: build_schema.py"
 step "Step 3: load_transcripts.py"
 "${PY}" ingest/load_transcripts.py
 
+step "Step 3b: load_glopardo.py (financial metrics + sector/CIK)"
+"${PY}" ingest/load_glopardo.py
+
 # LOAD_ONLY=1 stops here — schema + classification only, skipping the slow
 # sentiment scoring and FTS index. Handy while iterating on classification.
 if [[ "${LOAD_ONLY:-0}" == "1" ]]; then

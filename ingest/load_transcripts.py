@@ -504,7 +504,7 @@ def main() -> int:
         con.executemany(
             "INSERT INTO _c VALUES (?,?)", list(companies.items())
         )
-        con.execute("INSERT INTO companies SELECT ticker, name FROM _c")
+        con.execute("INSERT INTO companies (ticker, name) SELECT ticker, name FROM _c")
 
     # Report.
     n_co = con.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
