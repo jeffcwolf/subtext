@@ -69,18 +69,26 @@ OTHER_MGMT_RE = re.compile(
     r"founder|managing director|head of|\bofficer\b",
     re.IGNORECASE,
 )
-# Boundary between one introduced person's title clause and the next.
-PERSON_BREAK_RE = re.compile(r";|\n|\band our\b|\band joining\b", re.IGNORECASE)
+# Boundary between one introduced person's title clause and the next. Includes
+# the sentence period so a title window can't cross into a later person's
+# introduction (e.g. a short "Name - Firm." roster entry followed by an intro).
+PERSON_BREAK_RE = re.compile(r"[.;\n]|\band our\b|\band joining\b", re.IGNORECASE)
 
-# The operator turn that actually opens the Q&A. Deliberately does NOT match the
-# opening disclaimer ("... there will be a question-and-answer session"), which
-# is future-tense and appears in the very first operator segment.
+# The operator turn that actually opens the Q&A. Must NOT match the opening
+# disclaimer, which merely describes the upcoming Q&A ("... there will be a
+# question-and-answer session", "... following the presentation, we will conduct
+# a question-and-answer session"). The reliable start signals are routing a
+# questioner, or "now begin/open ... questions".
 QA_START_RE = re.compile(
-    r"\bfirst question\b|\bnext question\b|"
-    r"questions?\s*(?:comes?|come)\s*from|from the line of|"
-    r"we(?:'?ll| will| are going to)?\s*(?:now\s*)?"
-    r"(?:begin|start|open|take|conduct)\b[^.]{0,50}\bquestion|"
-    r"(?:begin|conduct|start)\s+the\s+question[-\s]and[-\s]answer\s+session",
+    # Routing to a questioner — only appears at the real start.
+    r"\b(?:first|next|final|last)\s+question\b|"
+    r"questions?\s+(?:comes?|come|is|are|will\s+come|will\s+be)\s+from\b|"
+    r"from the line of\b|"
+    # "we will NOW begin/open/conduct ... question" — the 'now' is what separates
+    # the actual start from the future-tense opening description.
+    r"we(?:'?ll| will| are)?\s*now\s*(?:begin|start|open|take|conduct|be)\b"
+    r"[^.]{0,50}\bquestion|"
+    r"(?:floor|lines?)\s+(?:is|are)\s+(?:now\s+)?open\b[^.]{0,20}\bquestion",
     re.IGNORECASE,
 )
 
@@ -96,10 +104,40 @@ ANALYST_ROUTE_RE = re.compile(
 HONORIFIC_RE = re.compile(r"^(?:mr|ms|mrs|dr|sir)\.?\s+", re.IGNORECASE)
 
 
+def person_name(label: str) -> str:
+    """Person-name portion of a label, dropping a ' - Firm/Company' suffix.
+
+    Labels come in two shapes: bare ("Mike McMullen") and name-with-affiliation
+    ("William Douglas Parker - American Airlines Group, Inc."). The separator is a
+    space-padded dash, so intra-name hyphens ("Dumoulin-Smith") are preserved.
+    """
+    return re.split(r"\s[-–—]\s", label, maxsplit=1)[0].strip()
+
+
 def _surname(label: str) -> str:
-    """Last name token of a label (punctuation stripped)."""
-    toks = re.sub(r"[.,]", " ", label).split()
+    """Last name token of a label's person-name (punctuation stripped)."""
+    toks = re.sub(r"[.,]", " ", person_name(label)).split()
     return toks[-1].strip("'’-") if toks else ""
+
+
+# Non-speaker labels: roster headers, section markers, sponsor boilerplate and
+# punctuation-only artifacts (surfaced by diagnose_classification.py). These are
+# dropped rather than emitted as utterances.
+SKIP_LABEL_RE = re.compile(
+    r"^\W*(?:executives?|analysts?|presentation|end of q\s*&\s*a|q\s*&\s*a|"
+    r"definitions?|(?:corporate|company|conference call|call) participants?|"
+    r"operator instructions?)\W*$",
+    re.IGNORECASE,
+)
+
+
+def is_nonspeaker(label: str) -> bool:
+    """True for roster headers, sponsor boilerplate, and punctuation-only labels."""
+    if not label:
+        return False  # empty label = a real but unlabelled speaker; keep it
+    if SKIP_LABEL_RE.match(label) or "sponsor" in label.lower():
+        return True
+    return not re.search(r"[A-Za-z0-9]", label)
 
 
 def _title_clause_role(window: str) -> str | None:
@@ -149,10 +187,10 @@ def build_role_map(segments, qa_start) -> dict[str, str]:
             names.add(label)
 
     role_map: dict[str, str] = {}
-    for name in names:
-        role = _role_for_name(name, intro_text)
+    for label in names:
+        role = _role_for_name(person_name(label), intro_text)
         if role:
-            role_map[name] = role
+            role_map[label] = role
     return role_map
 
 
@@ -220,8 +258,9 @@ def classify_transcript(segments, qa_start=None):
             continue
         label = (seg.get("speaker") or "").strip()
         text = seg.get("text") or ""
+        if is_nonspeaker(label):
+            continue                # roster header / sponsor boilerplate / junk
         in_qa = i >= qa_start
-        low = label.lower()
 
         if OPERATOR_LABEL_RE.match(label):
             role = "Operator"
@@ -231,7 +270,7 @@ def classify_transcript(segments, qa_start=None):
             role = "Analyst"        # e.g. "Unidentified Analyst"
         elif label in role_map:
             role = role_map[label]  # management, identified from the intro titles
-        elif label in analyst_full or _surname(label) in analyst_surnames:
+        elif person_name(label) in analyst_full or _surname(label) in analyst_surnames:
             role = "Analyst"        # named by the operator when handing off Q&A
         else:
             # Unknown speaker. In the Q&A the analysts are the ones the operator
