@@ -194,31 +194,60 @@ def build_role_map(segments, qa_start) -> dict[str, str]:
     return role_map
 
 
+# "our CEO, <Name>" / "the CFO, <Name>" — a title stated right before the name.
+# Used to handle "Title, Name" comma lists ("our CEO, Robert Isom, our CFO,
+# Devon May") without breaking the "Name, Title" form. Anchored with ",\s*$" so
+# it only fires when the title's comma sits immediately before the name (not a
+# neighbour's title ended by ";").
+TITLE_BEFORE_RE = re.compile(r"\b(?:our|the|your)\s+([A-Za-z &]+?),\s*$", re.IGNORECASE)
+
+
+def role_from_own_label(label: str) -> str | None:
+    """Chief role stated in the label itself ("Peter Oppenheimer, CFO").
+
+    Only CEO/CFO/COO/IR are read from the label — an analyst's firm affiliation
+    ("Name - Managing Director, Bernstein") must not be read as management, and a
+    covered company's own C-suite never appears as an analyst.
+    """
+    m = re.search(r"[,\-–—]", label)
+    if not m:
+        return None
+    cm = CHIEF_TITLE_RE.search(label[m.end():])
+    return cm.lastgroup if cm else None
+
+
 def _role_for_name(name: str, intro_text: str) -> str | None:
     """Find a name's role in the intro, matching the full label then its surname.
 
     The speaker label and the introduction often use different name forms (label
     "William Parker" vs intro "Doug Parker, our CEO"), so an exact-name miss
-    falls back to matching the surname near a title.
+    falls back to matching the surname near a title. At each occurrence the order
+    is: title stated just before the name ("our CEO, Name"), then just after
+    ("Name, our CEO"), then a loose title-before fallback.
     """
+    positions: list[tuple[int, int]] = []
     idx = intro_text.find(name)
     if idx >= 0:
-        role = _title_clause_role(intro_text[idx + len(name):idx + len(name) + 120])
-        if role is None:
-            m = CHIEF_TITLE_RE.search(intro_text[max(0, idx - 25):idx])
-            role = m.lastgroup if m else None
-        if role:
-            return role
-
+        positions.append((idx, idx + len(name)))
     surname = _surname(name)
     if len(surname) >= 3:
-        for sm in re.finditer(r"\b" + re.escape(surname) + r"\b", intro_text):
-            role = _title_clause_role(intro_text[sm.end():sm.end() + 120])
-            if role is None:
-                m = CHIEF_TITLE_RE.search(intro_text[max(0, sm.start() - 25):sm.start()])
-                role = m.lastgroup if m else None
-            if role:
-                return role
+        positions.extend(
+            (m.start(), m.end())
+            for m in re.finditer(r"\b" + re.escape(surname) + r"\b", intro_text)
+        )
+
+    for start, end in positions:
+        bm = TITLE_BEFORE_RE.search(intro_text[max(0, start - 45):start])
+        if bm:
+            cm = CHIEF_TITLE_RE.search(bm.group(1))
+            if cm:
+                return cm.lastgroup
+        role = _title_clause_role(intro_text[end:end + 120])
+        if role:
+            return role
+        cm = CHIEF_TITLE_RE.search(intro_text[max(0, start - 25):start])
+        if cm:
+            return cm.lastgroup
     return None
 
 
@@ -268,6 +297,8 @@ def classify_transcript(segments, qa_start=None):
             role = "Other"          # malformed label (text leaked into speaker)
         elif ANALYST_LABEL_RE.search(label):
             role = "Analyst"        # e.g. "Unidentified Analyst"
+        elif role_from_own_label(label):
+            role = role_from_own_label(label)  # title stated in the label itself
         elif label in role_map:
             role = role_map[label]  # management, identified from the intro titles
         elif person_name(label) in analyst_full or _surname(label) in analyst_surnames:
