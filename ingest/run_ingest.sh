@@ -49,6 +49,15 @@ step "Step 2: build_schema.py"
 step "Step 3: load_transcripts.py"
 "${PY}" ingest/load_transcripts.py
 
+# LOAD_ONLY=1 stops here — schema + classification only, skipping the slow
+# sentiment scoring and FTS index. Handy while iterating on classification.
+if [[ "${LOAD_ONLY:-0}" == "1" ]]; then
+  echo
+  echo "==================== LOAD_ONLY: stopping after Step 3 ===================="
+  echo "Skipped sentiment + FTS. Run without LOAD_ONLY to complete the build."
+  exit 0
+fi
+
 step "Step 4: compute_sentiment.py"
 "${PY}" ingest/compute_sentiment.py
 
