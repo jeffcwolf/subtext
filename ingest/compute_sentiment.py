@@ -116,6 +116,15 @@ def main() -> int:
 
     con = duckdb.connect(str(DB_PATH))
     con.execute("DELETE FROM sentiment_facts")
+
+    # Export the word lists so the web app can highlight sentiment words inline
+    # without needing the dictionary CSV at runtime.
+    con.execute("CREATE OR REPLACE TABLE lm_words (word VARCHAR, category VARCHAR)")
+    word_rows = [(w, cat) for cat in CATEGORIES for w in sets[cat]]
+    if word_rows:
+        con.executemany("INSERT INTO lm_words VALUES (?,?)", word_rows)
+    print(f"Exported {len(word_rows):,} lm_words rows.")
+
     total = con.execute("SELECT COUNT(*) FROM utterances").fetchone()[0]
     print(f"\nScoring {total:,} utterances ...")
 

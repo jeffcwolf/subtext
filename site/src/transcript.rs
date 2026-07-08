@@ -167,6 +167,7 @@ fn render(meta: TranscriptMeta, utterances: Vec<Utterance>) -> String {
                     let pill = format!("pill {}", app::sentiment_class(u.net_sentiment));
                     let section = app::section_label(&u.section);
                     let counts = format!("+{} / −{}", u.positive, u.negative);
+                    let body = crate::lexicon::highlight(&u.text);
                     view! {
                         <div class=cls>
                             <div class="meta">
@@ -176,7 +177,7 @@ fn render(meta: TranscriptMeta, utterances: Vec<Utterance>) -> String {
                                 <span class=pill>{app::fmt_sentiment(u.net_sentiment)}</span>
                                 <span class="section-tag mono">{counts}</span>
                             </div>
-                            <p class="body">{u.text.clone()}</p>
+                            <p class="body" inner_html=body></p>
                         </div>
                     }
                 }).collect_view()}

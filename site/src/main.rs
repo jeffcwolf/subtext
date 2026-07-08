@@ -6,6 +6,7 @@ mod chart;
 mod company;
 mod db;
 mod home;
+mod lexicon;
 mod search;
 mod transcript;
 mod types;
@@ -61,6 +62,16 @@ async fn main() {
             std::process::exit(1);
         }
     }
+
+    // Load the Loughran-McDonald word sets for inline highlighting (optional).
+    let lex = lexicon::load(&db, &db_path).await;
+    let (np, nn) = lex.len();
+    if np + nn > 0 {
+        println!("Sentiment lexicon: {np} positive, {nn} negative words");
+    } else {
+        println!("Sentiment lexicon: not found — transcript highlighting disabled");
+    }
+    lexicon::set(lex);
 
     let router = Router::new()
         .route("/", get(home::handler))
