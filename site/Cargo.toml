@@ -1,0 +1,23 @@
+[package]
+name = "subtext"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "subtext"
+path = "src/main.rs"
+
+[dependencies]
+# Leptos used purely for server-side rendering to HTML strings (no hydration /
+# WASM); Axum serves the rendered pages. Pure-SVG charts, no JS framework.
+leptos = { version = "0.8", features = ["ssr"] }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+# 1.10504.x bundles libduckdb 1.5.4 — matches the file written by the Python
+# ingest pipeline (duckdb 1.5.4), so storage format and extensions line up.
+duckdb = { version = "=1.10504.0", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+anyhow = "1"
+
+[profile.release]
+opt-level = 2
