@@ -125,6 +125,70 @@ def main() -> int:
               f"{split[0]:,}/{split[1]:,} ({pct:.1f}%) "
               f"— an estimate of management mislabeled as analysts.")
 
+    print("\n" + RULE)
+    print("4. THE 'Other' BUCKET — is it management or leaked analysts?")
+    print("   A name in ONE ticker is management; a name across MANY tickers")
+    print("   (>=5) is almost certainly an analyst we failed to catch.")
+    print(RULE)
+
+    # Where does 'Other' sit? Mostly qa_response = management answering.
+    print("  'Other' by section:")
+    for section, n in con.execute(
+        "SELECT section, COUNT(*) FROM utterances WHERE speaker_role='Other' "
+        "GROUP BY 1 ORDER BY 2 DESC"
+    ).fetchall():
+        print(f"    {section:<16} {n:>9,}")
+
+    # Composition of named 'Other' by ticker-concentration.
+    comp = con.execute(
+        """
+        WITH o AS (
+            SELECT u.speaker_name, COUNT(*) utt, COUNT(DISTINCT t.ticker) tickers
+            FROM utterances u JOIN transcripts t USING (transcript_id)
+            WHERE u.speaker_role = 'Other'
+              AND u.speaker_name <> '' AND LENGTH(u.speaker_name) <= 60
+            GROUP BY 1
+        )
+        SELECT
+          SUM(CASE WHEN tickers = 1  THEN utt ELSE 0 END) AS single,
+          SUM(CASE WHEN tickers BETWEEN 2 AND 4 THEN utt ELSE 0 END) AS few,
+          SUM(CASE WHEN tickers >= 5 THEN utt ELSE 0 END) AS many,
+          SUM(utt) AS total
+        FROM o
+        """
+    ).fetchone()
+    empty = con.execute(
+        "SELECT COUNT(*) FROM utterances WHERE speaker_role='Other' "
+        "AND (speaker_name='' OR speaker_name IS NULL)"
+    ).fetchone()[0]
+    malformed = con.execute(
+        "SELECT COUNT(*) FROM utterances WHERE speaker_role='Other' "
+        "AND LENGTH(speaker_name) > 60"
+    ).fetchone()[0]
+    if comp and comp[3]:
+        single, few, many, total = (comp[0] or 0), (comp[1] or 0), (comp[2] or 0), comp[3]
+        p = lambda x: f"{100.0 * x / total:5.1f}%"
+        print("\n  Named 'Other' utterances by how many tickers the speaker spans:")
+        print(f"    1 ticker  (management):        {single:>9,}  {p(single)}")
+        print(f"    2-4 tickers (mostly mgmt):     {few:>9,}  {p(few)}")
+        print(f"    >=5 tickers (likely analyst):  {many:>9,}  {p(many)}")
+        print(f"    empty speaker label:           {empty:>9,}")
+        print(f"    malformed label (>60 chars):   {malformed:>9,}")
+
+    print("\n  Top 'Other' names spanning the MOST tickers (analyst suspects):")
+    print(f"  {'speaker':<28} {'utts':>7} {'calls':>6} {'tickers':>8}")
+    for spk, utt, calls, tickers in con.execute(
+        """
+        SELECT u.speaker_name, COUNT(*) utt,
+               COUNT(DISTINCT u.transcript_id) calls, COUNT(DISTINCT t.ticker) tk
+        FROM utterances u JOIN transcripts t USING (transcript_id)
+        WHERE u.speaker_role = 'Other'
+          AND u.speaker_name <> '' AND LENGTH(u.speaker_name) <= 60
+        GROUP BY 1 ORDER BY tk DESC, utt DESC LIMIT 15
+        """
+    ).fetchall():
+        print(f"  {spk[:27]:<28} {utt:>7,} {calls:>6,} {tickers:>8,}")
+
     con.close()
     return 0
 
