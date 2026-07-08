@@ -45,75 +45,115 @@ BATCH_TRANSCRIPTS = 3000
 # Optional cap for quick runs.
 LIMIT = int(os.environ.get("SUBTEXT_LIMIT", "0"))
 
-# Separators between a speaker's name and their title/firm.
-NAME_SEP_RE = re.compile(r"\s+[-–—]{1,2}\s+|\s*[,(]\s*")
+# In this dataset the speaker labels are bare names ("Mike McMullen") with no
+# titles, so roles are inferred from how people are introduced in the prepared
+# remarks ("... Mike McMullen, Agilent's President and CEO; and Bob McMahon,
+# Senior Vice President and CFO").
 
-# Firms/roles that mark an analyst. Deliberately broad; refine against the
-# speaker survey from explore_data.py once real data is available.
-FIRM_RE = re.compile(
-    r"\b(goldman|morgan stanley|jpmorgan|j\.?p\.? morgan|bofa|bank of america|"
-    r"barclays|citi(group)?|credit suisse|ubs|wells fargo|deutsche|jefferies|"
-    r"evercore|cowen|raymond james|piper|wolfe|bernstein|rbc|mizuho|baird|"
-    r"stifel|guggenheim|truist|oppenheimer|needham|canaccord|keybanc|"
-    r"macquarie|nomura|hsbc|scotiabank|td securities|bmo|"
-    r"securities|research|capital|partners|& co\.?|analyst)\b",
+OPERATOR_LABEL_RE = re.compile(r"^\s*operator\b", re.IGNORECASE)
+ANALYST_LABEL_RE = re.compile(r"analyst", re.IGNORECASE)
+
+# Chief titles, captured so the *leftmost* one in a person's title clause wins
+# (so "President and CEO" resolves to CEO, not President).
+CHIEF_TITLE_RE = re.compile(
+    r"(?P<CEO>chief executive officer|chief executive|\bceo\b)|"
+    r"(?P<CFO>chief financial officer|chief financial|\bcfo\b)|"
+    r"(?P<COO>chief operating officer|chief operating|\bcoo\b)|"
+    r"(?P<IR>investor relations|head of investor)",
+    re.IGNORECASE,
+)
+# Generic management titles, used only when no chief title is present.
+OTHER_MGMT_RE = re.compile(
+    r"chief [a-z]+ officer|\bpresident\b|chair(?:man|woman|person)?|"
+    r"vice president|\bevp\b|\bsvp\b|\bvp\b|treasurer|general counsel|"
+    r"founder|managing director|head of|\bofficer\b",
+    re.IGNORECASE,
+)
+# Boundary between one introduced person's title clause and the next.
+PERSON_BREAK_RE = re.compile(r";|\n|\band our\b|\band joining\b", re.IGNORECASE)
+
+# The operator turn that actually opens the Q&A. Deliberately does NOT match the
+# opening disclaimer ("... there will be a question-and-answer session"), which
+# is future-tense and appears in the very first operator segment.
+QA_START_RE = re.compile(
+    r"\bfirst question\b|\bnext question\b|"
+    r"questions?\s*(?:comes?|come)\s*from|from the line of|"
+    r"we(?:'?ll| will| are going to)?\s*(?:now\s*)?"
+    r"(?:begin|start|open|take|conduct)\b[^.]{0,50}\bquestion|"
+    r"(?:begin|conduct|start)\s+the\s+question[-\s]and[-\s]answer\s+session",
     re.IGNORECASE,
 )
 
-QA_TRANSITION_RE = re.compile(
-    r"question[- ]and[- ]answer|question[- ]&[- ]answer|"
-    r"we('| wi)ll now (begin|take|open|move to).{0,40}question|"
-    r"(begin|open|start).{0,20}q\s*&\s*a|"
-    r"floor is open|open (the )?(call|line|floor) (for|to) question",
-    re.IGNORECASE,
-)
 
+def _title_clause_role(window: str) -> str | None:
+    """Classify the title clause that immediately follows (or precedes) a name.
 
-def role_from_label(speaker: str) -> str | None:
-    """Role inferable from the speaker label alone, or None if ambiguous."""
-    s = speaker.lower()
-    if re.search(r"\boperator\b", s):
-        return "Operator"
-    if re.search(r"chief executive|\bceo\b", s):
-        return "CEO"
-    if re.search(r"chief financial|\bcfo\b", s):
-        return "CFO"
-    if re.search(r"chief operating|\bcoo\b", s):
-        return "COO"
-    if re.search(r"investor relations|head of investor|\bir\b", s):
-        return "IR"
-    if FIRM_RE.search(s):
-        return "Analyst"
-    return None
-
-
-def speaker_name(speaker: str) -> str:
-    """The name portion of a label, lowercased for map lookups."""
-    return NAME_SEP_RE.split(speaker.strip(), maxsplit=1)[0].strip().lower()
+    Only the current person's clause is considered — split off anything after a
+    person break (";", newline, "and our ...") so a neighbour's title can't leak
+    in. The leftmost chief title wins so "President and CEO" -> CEO.
+    """
+    clause = PERSON_BREAK_RE.split(window, maxsplit=1)[0]
+    m = CHIEF_TITLE_RE.search(clause)
+    if m:
+        return m.lastgroup
+    return "Other" if OTHER_MGMT_RE.search(clause) else None
 
 
 def find_qa_start(segments) -> int:
-    """Index of the first Q&A segment, or len(segments) if none is detected."""
+    """Index of the operator turn that opens the Q&A, else len(segments)."""
     for i, seg in enumerate(segments):
-        text = seg.get("text") or "" if isinstance(seg, dict) else ""
-        if QA_TRANSITION_RE.search(text):
+        if not isinstance(seg, dict):
+            continue
+        label = (seg.get("speaker") or "").strip()
+        if OPERATOR_LABEL_RE.match(label) and QA_START_RE.search(seg.get("text") or ""):
             return i
     return len(segments)
 
 
-def classify_transcript(segments):
-    """Yield (section, speaker_name, speaker_role, text) for each segment."""
-    # Pass 1: learn name -> role from any labelled segment.
-    name_to_role: dict[str, str] = {}
+def build_role_map(segments, qa_start) -> dict[str, str]:
+    """Learn speaker-name -> management role from the introduction text."""
+    intro_parts: list[str] = []
+    size = 0
+    for seg in segments[:qa_start]:
+        if isinstance(seg, dict):
+            t = seg.get("text") or ""
+            intro_parts.append(t)
+            size += len(t)
+            if size > 8000:  # the "with me are ..." intro is always near the top
+                break
+    intro_text = " ".join(intro_parts)[:8000]
+
+    names = set()
     for seg in segments:
-        label = (seg.get("speaker") or "") if isinstance(seg, dict) else ""
-        role = role_from_label(label)
-        if role and role not in ("Operator",):
-            name_to_role.setdefault(speaker_name(label), role)
+        if not isinstance(seg, dict):
+            continue
+        label = (seg.get("speaker") or "").strip()
+        if label and len(label) <= 60 and not OPERATOR_LABEL_RE.match(label):
+            names.add(label)
 
-    qa_start = find_qa_start(segments)
+    role_map: dict[str, str] = {}
+    for name in names:
+        idx = intro_text.find(name)
+        if idx < 0:
+            continue
+        end = idx + len(name)
+        role = _title_clause_role(intro_text[end:end + 120])
+        if role is None:
+            # Title stated before the name ("our CEO, Jane Doe").
+            m = CHIEF_TITLE_RE.search(intro_text[max(0, idx - 25):idx])
+            if m:
+                role = m.lastgroup
+        if role:
+            role_map[name] = role
+    return role_map
 
-    # Pass 2: assign role + section.
+
+def classify_transcript(segments, qa_start=None):
+    """Yield (section, speaker_name, speaker_role, text) for each segment."""
+    if qa_start is None:
+        qa_start = find_qa_start(segments)
+    role_map = build_role_map(segments, qa_start)
+
     for i, seg in enumerate(segments):
         if not isinstance(seg, dict):
             continue
@@ -121,11 +161,16 @@ def classify_transcript(segments):
         text = seg.get("text") or ""
         in_qa = i >= qa_start
 
-        role = role_from_label(label)
-        if role is None:
-            role = name_to_role.get(speaker_name(label))
-        if role is None:
-            role = "Analyst" if in_qa else "Other"
+        if OPERATOR_LABEL_RE.match(label):
+            role = "Operator"
+        elif len(label) > 60:
+            role = "Other"          # malformed label (text leaked into speaker)
+        elif ANALYST_LABEL_RE.search(label):
+            role = "Analyst"        # e.g. "Unidentified Analyst"
+        else:
+            role = role_map.get(label)
+            if role is None:
+                role = "Analyst" if in_qa else "Other"
 
         if role == "Operator":
             section = "operator"
@@ -203,9 +248,9 @@ def main() -> int:
     assert isinstance(ds, Dataset)
 
     # We only need the metadata fields and structured_content here. Dropping the
-    # large `full_text` column avoids decoding it for every row, which is a big
-    # speedup over the full dataset.
-    drop = [c for c in ("full_text",) if c in ds.column_names]
+    # large whole-transcript text columns (`content` ~56 KB/row, and `full_text`
+    # if present) avoids decoding them for every row — a big speedup.
+    drop = [c for c in ("full_text", "content") if c in ds.column_names]
     if drop:
         ds = ds.remove_columns(drop)
 
@@ -224,6 +269,8 @@ def main() -> int:
     section_counts: Counter = Counter()
     role_counts: Counter = Counter()
     total_utterances = 0
+    # Classification-health diagnostics (how well the heuristics fired).
+    n_nonempty = n_qa_detected = n_with_ceo = n_with_cfo = 0
 
     def flush():
         nonlocal transcript_rows, utterance_rows
@@ -263,10 +310,17 @@ def main() -> int:
         quarter = normalize_quarter(row.get("quarter"))
         tid = row.get("transcript_id")
         if not tid:
-            tid = f"{sym}_{year}_{quarter}"
-        tid = str(tid)
-        if tid in seen_transcripts:
-            continue  # keep the first occurrence; transcript_id is the PK
+            # This dataset has no transcript_id; synthesize a readable, unique
+            # one from ticker/year/quarter, suffixing on the rare collision
+            # (e.g. two calls in the same fiscal quarter) so none are dropped.
+            base = f"{sym}_{year}_{quarter}" if sym else f"row{i}"
+            tid, k = base, 2
+            while tid in seen_transcripts:
+                tid, k = f"{base}_{k}", k + 1
+        else:
+            tid = str(tid)
+            if tid in seen_transcripts:
+                continue  # real duplicate transcript_id: keep the first
         seen_transcripts.add(tid)
 
         if sym:
@@ -277,8 +331,14 @@ def main() -> int:
         )
 
         segments = row.get("structured_content") or []
+        qa_start = find_qa_start(segments)
+        if segments:
+            n_nonempty += 1
+            if qa_start < len(segments):
+                n_qa_detected += 1
+        roles_here: set[str] = set()
         seq = 0
-        for section, spk, role, text in classify_transcript(segments):
+        for section, spk, role, text in classify_transcript(segments, qa_start):
             text = text or ""
             wc = len(text.split())
             utterance_rows.append(
@@ -286,8 +346,11 @@ def main() -> int:
             )
             section_counts[section] += 1
             role_counts[role] += 1
+            roles_here.add(role)
             seq += 1
             total_utterances += 1
+        n_with_ceo += "CEO" in roles_here
+        n_with_cfo += "CFO" in roles_here
 
         if (i + 1) % BATCH_TRANSCRIPTS == 0:
             flush()
@@ -320,6 +383,17 @@ def main() -> int:
     print("\nUtterances by speaker_role:")
     for role, count in role_counts.most_common():
         print(f"  {role:<10} {count:>9,}")
+
+    # Classification health: on clean data most non-empty transcripts should
+    # have a detected Q&A boundary and an identified CEO and CFO. Low numbers
+    # here mean the intro-parsing / Q&A-start heuristics need tuning.
+    if n_nonempty:
+        pct = lambda x: f"{100.0 * x / n_nonempty:5.1f}%"
+        print("\nClassification health (of "
+              f"{n_nonempty:,} non-empty transcripts):")
+        print(f"  Q&A boundary detected: {pct(n_qa_detected)} ({n_qa_detected:,})")
+        print(f"  CEO identified:        {pct(n_with_ceo)} ({n_with_ceo:,})")
+        print(f"  CFO identified:        {pct(n_with_cfo)} ({n_with_cfo:,})")
     print("\nLoad complete.")
     return 0
 
