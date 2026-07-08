@@ -126,7 +126,8 @@ libduckdb and is slow (several minutes); later builds are fast.
 |---|---|
 | `/` | Description, search box, most-covered companies |
 | `/company/{ticker}` | Sentiment timeline, CEO-vs-CFO panel, prepared-vs-Q&A panel, **tone-vs-forward-expectations** (glopardo forward EPS / P/E + divergence flags), recent transcripts |
-| `/transcript/{id}` | The full call as utterances with role badges, section tags, per-turn sentiment, and that quarter's EPS / P/E |
+| `/transcript/{id}` | The full call as utterances with role badges, section tags, per-turn sentiment, **inline green/red sentiment-word highlighting**, and that quarter's EPS / P/E |
+| `/sectors`, `/sector/{name}` | Cross-company **tone comparison within a sector** — companies ranked by average tone with deviation from the sector mean (SPEC #6) |
 | `/search` | BM25 full-text search with ticker / role / section filters |
 | `/about` | Data sources and methodology |
 
