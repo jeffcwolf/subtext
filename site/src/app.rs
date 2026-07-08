@@ -95,6 +95,22 @@ pub fn fmt_sentiment(v: Option<f64>) -> String {
     }
 }
 
+/// Format an optional dollar figure (e.g. EPS).
+pub fn fmt_money(v: Option<f64>) -> String {
+    match v {
+        Some(x) => format!("${x:.2}"),
+        None => "—".to_string(),
+    }
+}
+
+/// Format an optional ratio (e.g. P/E).
+pub fn fmt_ratio(v: Option<f64>) -> String {
+    match v {
+        Some(x) => format!("{x:.1}"),
+        None => "—".to_string(),
+    }
+}
+
 /// Human-readable label for a section code.
 pub fn section_label(section: &str) -> &'static str {
     match section {

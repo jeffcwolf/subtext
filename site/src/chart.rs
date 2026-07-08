@@ -125,6 +125,82 @@ pub fn line_chart(x_labels: &[String], series: &[Series]) -> String {
     svg
 }
 
+/// A single-series line chart for a positive metric (forward EPS, P/E …),
+/// auto-scaled to the data's own [min, max] rather than centred on zero.
+/// `prefix` is prepended to axis labels (e.g. "$").
+pub fn metric_chart(x_labels: &[String], values: &[Option<f64>], class: &str, prefix: &str) -> String {
+    let n = x_labels.len();
+    let present: Vec<f64> = values.iter().flatten().copied().collect();
+    if n == 0 || present.is_empty() {
+        return r#"<p class="muted">No data.</p>"#.to_string();
+    }
+    let iw = W - ML - MR;
+    let ih = H - MT - MB;
+    let (mut lo, mut hi) = (
+        present.iter().cloned().fold(f64::INFINITY, f64::min),
+        present.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+    );
+    if (hi - lo).abs() < 1e-9 {
+        lo -= 1.0;
+        hi += 1.0;
+    }
+    let pad = (hi - lo) * 0.08;
+    let (lo, hi) = (lo - pad, hi + pad);
+
+    let x_at = |i: usize| -> f64 {
+        if n == 1 { ML + iw / 2.0 } else { ML + iw * (i as f64) / ((n - 1) as f64) }
+    };
+    let y_at = |v: f64| -> f64 { MT + ih - (v - lo) / (hi - lo) * ih };
+
+    let mut svg = format!(
+        r#"<svg class="chart" viewBox="0 0 {W} {H}" role="img" preserveAspectRatio="xMidYMid meet">"#
+    );
+    for frac in [0.0f64, 0.5, 1.0] {
+        let v = lo + (hi - lo) * frac;
+        let y = y_at(v);
+        svg.push_str(&format!(
+            r#"<line class="grid" x1="{ML:.1}" y1="{y:.1}" x2="{x2:.1}" y2="{y:.1}"/>"#,
+            x2 = ML + iw
+        ));
+        svg.push_str(&format!(
+            r#"<text class="tick" x="{tx:.1}" y="{ty:.1}" text-anchor="end">{p}{val:.2}</text>"#,
+            tx = ML - 6.0, ty = y + 3.0, p = escape(prefix), val = v
+        ));
+    }
+    let step = (((n as f64) / 8.0).ceil() as usize).max(1);
+    let mut i = 0;
+    while i < n {
+        svg.push_str(&format!(
+            r#"<text class="tick" x="{x:.1}" y="{y:.1}" text-anchor="middle">{lbl}</text>"#,
+            x = x_at(i), y = H - 12.0, lbl = escape(&x_labels[i])
+        ));
+        i += step;
+    }
+    let mut d = String::new();
+    let mut pen = false;
+    for (idx, v) in values.iter().enumerate() {
+        if let Some(val) = v {
+            let (x, y) = (x_at(idx), y_at(*val));
+            d.push_str(&format!("{}{x:.1},{y:.1}", if pen { " L" } else { "M" }));
+            pen = true;
+        } else {
+            pen = false;
+        }
+    }
+    svg.push_str(&format!(r#"<path class="series {cls}" d="{d}"/>"#, cls = escape(class)));
+    for (idx, v) in values.iter().enumerate() {
+        if let Some(val) = v {
+            svg.push_str(&format!(
+                r#"<circle class="dot {cls}" cx="{x:.1}" cy="{y:.1}" r="2.5"><title>{lbl}: {p}{val:.2}</title></circle>"#,
+                cls = escape(class), x = x_at(idx), y = y_at(*val),
+                lbl = escape(&x_labels[idx]), p = escape(prefix), val = val
+            ));
+        }
+    }
+    svg.push_str("</svg>");
+    svg
+}
+
 /// A small HTML legend for a set of series.
 pub fn legend(series: &[Series]) -> String {
     let mut out = String::from(r#"<div class="chart-legend">"#);

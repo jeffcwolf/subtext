@@ -11,6 +11,8 @@ pub struct CoveredCompany {
 pub struct CompanyHeader {
     pub ticker: String,
     pub name: String,
+    pub sector: Option<String>,
+    pub industry: Option<String>,
     pub transcripts: i64,
     pub first_date: Option<String>,
     pub last_date: Option<String>,
@@ -30,6 +32,10 @@ pub struct CallPoint {
     pub cfo: Option<f64>,
     pub prepared: Option<f64>,
     pub qa: Option<f64>,
+    // glopardo financials matched to this call (may be absent).
+    pub eps_ttm: Option<f64>,
+    pub eps_fwd: Option<f64>,
+    pub pe_fwd: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +68,10 @@ pub struct TranscriptMeta {
     pub label: String,
     pub overall: Option<f64>,
     pub total_words: i64,
+    pub sector: Option<String>,
+    pub eps_ttm: Option<f64>,
+    pub eps_fwd: Option<f64>,
+    pub pe_fwd: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
