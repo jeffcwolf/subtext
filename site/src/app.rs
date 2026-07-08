@@ -21,6 +21,7 @@ pub fn shell(title: &str, body: &str) -> String {
   <a class="brand" href="/">Subtext</a>
   <nav class="mainnav">
     <a href="/">Home</a>
+    <a href="/sectors">Sectors</a>
     <a href="/search">Search</a>
     <a href="/about">About</a>
   </nav>
@@ -51,6 +52,20 @@ pub fn escape(s: &str) -> String {
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&#39;"),
             _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Percent-encode a string for use in a URL path segment.
+pub fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
         }
     }
     out

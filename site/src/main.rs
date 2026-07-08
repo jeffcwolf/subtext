@@ -8,6 +8,7 @@ mod db;
 mod home;
 mod lexicon;
 mod search;
+mod sectors;
 mod transcript;
 mod types;
 
@@ -77,6 +78,8 @@ async fn main() {
         .route("/", get(home::handler))
         .route("/company/{ticker}", get(company::handler))
         .route("/transcript/{id}", get(transcript::handler))
+        .route("/sectors", get(sectors::list_handler))
+        .route("/sector/{name}", get(sectors::detail_handler))
         .route("/search", get(search::handler))
         .route("/about", get(about::handler))
         .route("/style.css", get(style))

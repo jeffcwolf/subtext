@@ -153,7 +153,14 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
         (Some(a), Some(b)) => format!("{a} – {b}"),
         _ => "—".to_string(),
     };
-    let sector = header.sector.clone().unwrap_or_else(|| "—".to_string());
+    let sector_html = match &header.sector {
+        Some(s) if !s.is_empty() => format!(
+            r#"<a href="/sector/{}">{}</a>"#,
+            app::urlencode(s),
+            app::escape(s)
+        ),
+        _ => "—".to_string(),
+    };
     let recent: Vec<CallPoint> = calls.iter().rev().take(8).cloned().collect();
     let charted = calls.len();
 
@@ -161,7 +168,7 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
         <section class="card">
             <h1>{header.name.clone()}" "<span class="ticker mono">{header.ticker.clone()}</span></h1>
             <div class="stat-row">
-                <div class="stat"><span class="k">"Sector"</span><span class="v">{sector}</span></div>
+                <div class="stat"><span class="k">"Sector"</span><span class="v" inner_html=sector_html></span></div>
                 <div class="stat"><span class="k">"Transcripts"</span><span class="v">{header.transcripts}</span></div>
                 <div class="stat"><span class="k">"Date range"</span><span class="v">{date_range}</span></div>
                 <div class="stat"><span class="k">"Calls charted"</span><span class="v">{charted}</span></div>

@@ -75,6 +75,22 @@ pub struct TranscriptMeta {
 }
 
 #[derive(Clone, Debug)]
+pub struct SectorSummary {
+    pub sector: String,
+    pub companies: i64,
+    pub transcripts: i64,
+    pub avg_sentiment: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SectorCompany {
+    pub ticker: String,
+    pub name: String,
+    pub transcripts: i64,
+    pub avg_sentiment: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
 pub struct SearchHit {
     pub transcript_id: String,
     pub ticker: String,
