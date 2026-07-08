@@ -163,8 +163,10 @@ def to_iso_date(d) -> str | None:
 
 
 def load_dataset_local():
+    import datasets
     from datasets import load_from_disk
 
+    print(f"Python: {sys.executable} | datasets: {datasets.__version__}")
     if not KURRY_DIR.exists():
         print(
             f"ERROR: no dataset at {KURRY_DIR}.\n"
@@ -173,7 +175,19 @@ def load_dataset_local():
             file=sys.stderr,
         )
         sys.exit(2)
-    return load_from_disk(str(KURRY_DIR))
+    try:
+        return load_from_disk(str(KURRY_DIR))
+    except ValueError as exc:
+        if "Feature type" in str(exc) and "not found" in str(exc):
+            sys.exit(
+                f"\nERROR: this `datasets` ({datasets.__version__}) is too old to "
+                "read the saved dataset (it uses a newer feature type such as "
+                "'List').\nUse the project virtualenv (datasets>=5.0.0):\n"
+                "    source .venv/bin/activate\n"
+                "or upgrade: pip install -U 'datasets>=5.0.0'\n"
+                f"(original error: {exc})"
+            )
+        raise
 
 
 def main() -> int:

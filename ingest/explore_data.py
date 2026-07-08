@@ -61,12 +61,29 @@ def load_transcripts():
     direct Hub download only if that copy is missing, so this script is still
     useful in an environment that has network access but no saved dataset yet.
     """
+    import datasets
     from datasets import load_dataset, load_from_disk
     from datasets import Dataset, DatasetDict
 
+    print(f"Python:   {sys.executable}")
+    print(f"datasets: {datasets.__version__}")
+
     if KURRY_DIR.exists():
         print(f"Loading local dataset from {KURRY_DIR} ...")
-        ds = load_from_disk(str(KURRY_DIR))
+        try:
+            ds = load_from_disk(str(KURRY_DIR))
+        except ValueError as exc:
+            if "Feature type" in str(exc) and "not found" in str(exc):
+                sys.exit(
+                    f"\nERROR: this `datasets` ({datasets.__version__}) is too old "
+                    "to read the saved dataset.\n"
+                    "The on-disk copy uses a newer feature type (e.g. 'List'). "
+                    "Use the project virtualenv (which pins datasets>=5.0.0):\n"
+                    "    source .venv/bin/activate\n"
+                    "or upgrade: pip install -U 'datasets>=5.0.0'\n"
+                    f"(original error: {exc})"
+                )
+            raise
     else:
         print(
             f"No local copy at {KURRY_DIR}.\n"
