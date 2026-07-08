@@ -84,6 +84,23 @@ QA_START_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Operators announce each analyst: "... question ... from [the line of] <Name>
+# - Firm" / "... from <Name> with/of/representing <Firm>". Capture the name (up
+# to 4 capitalised tokens); it stops naturally at the firm connector (dash,
+# "with"/"of"/"from"/"representing", comma) since those are lowercase/punctuation.
+_NAME_TOKEN = r"[A-Z][A-Za-z.'’-]+"
+ANALYST_ROUTE_RE = re.compile(
+    r"(?:question|caller)\b[^.]{0,40}?\bfrom(?:\s+the\s+line\s+of)?\s+"
+    r"(?P<name>" + _NAME_TOKEN + r"(?:\s+" + _NAME_TOKEN + r"){0,3})"
+)
+HONORIFIC_RE = re.compile(r"^(?:mr|ms|mrs|dr|sir)\.?\s+", re.IGNORECASE)
+
+
+def _surname(label: str) -> str:
+    """Last name token of a label (punctuation stripped)."""
+    toks = re.sub(r"[.,]", " ", label).split()
+    return toks[-1].strip("'’-") if toks else ""
+
 
 def _title_clause_role(window: str) -> str | None:
     """Classify the title clause that immediately follows (or precedes) a name.
@@ -133,19 +150,62 @@ def build_role_map(segments, qa_start) -> dict[str, str]:
 
     role_map: dict[str, str] = {}
     for name in names:
-        idx = intro_text.find(name)
-        if idx < 0:
-            continue
-        end = idx + len(name)
-        role = _title_clause_role(intro_text[end:end + 120])
-        if role is None:
-            # Title stated before the name ("our CEO, Jane Doe").
-            m = CHIEF_TITLE_RE.search(intro_text[max(0, idx - 25):idx])
-            if m:
-                role = m.lastgroup
+        role = _role_for_name(name, intro_text)
         if role:
             role_map[name] = role
     return role_map
+
+
+def _role_for_name(name: str, intro_text: str) -> str | None:
+    """Find a name's role in the intro, matching the full label then its surname.
+
+    The speaker label and the introduction often use different name forms (label
+    "William Parker" vs intro "Doug Parker, our CEO"), so an exact-name miss
+    falls back to matching the surname near a title.
+    """
+    idx = intro_text.find(name)
+    if idx >= 0:
+        role = _title_clause_role(intro_text[idx + len(name):idx + len(name) + 120])
+        if role is None:
+            m = CHIEF_TITLE_RE.search(intro_text[max(0, idx - 25):idx])
+            role = m.lastgroup if m else None
+        if role:
+            return role
+
+    surname = _surname(name)
+    if len(surname) >= 3:
+        for sm in re.finditer(r"\b" + re.escape(surname) + r"\b", intro_text):
+            role = _title_clause_role(intro_text[sm.end():sm.end() + 120])
+            if role is None:
+                m = CHIEF_TITLE_RE.search(intro_text[max(0, sm.start() - 25):sm.start()])
+                role = m.lastgroup if m else None
+            if role:
+                return role
+    return None
+
+
+def extract_announced_analysts(segments) -> tuple[set[str], set[str]]:
+    """Names the operator hands questions to — the reliable analyst signal.
+
+    Returns (full names, surnames). Only operator turns are scanned, and the
+    opening disclaimer has no "question ... from <Name>" routing, so it is safe.
+    """
+    full: set[str] = set()
+    surnames: set[str] = set()
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        if not OPERATOR_LABEL_RE.match((seg.get("speaker") or "").strip()):
+            continue
+        for m in ANALYST_ROUTE_RE.finditer(seg.get("text") or ""):
+            name = HONORIFIC_RE.sub("", m.group("name")).strip(" .,-'")
+            if len(name) < 3:
+                continue
+            full.add(name)
+            sn = _surname(name)
+            if len(sn) >= 3:
+                surnames.add(sn)
+    return full, surnames
 
 
 def classify_transcript(segments, qa_start=None):
@@ -153,6 +213,7 @@ def classify_transcript(segments, qa_start=None):
     if qa_start is None:
         qa_start = find_qa_start(segments)
     role_map = build_role_map(segments, qa_start)
+    analyst_full, analyst_surnames = extract_announced_analysts(segments)
 
     for i, seg in enumerate(segments):
         if not isinstance(seg, dict):
@@ -160,6 +221,7 @@ def classify_transcript(segments, qa_start=None):
         label = (seg.get("speaker") or "").strip()
         text = seg.get("text") or ""
         in_qa = i >= qa_start
+        low = label.lower()
 
         if OPERATOR_LABEL_RE.match(label):
             role = "Operator"
@@ -167,10 +229,15 @@ def classify_transcript(segments, qa_start=None):
             role = "Other"          # malformed label (text leaked into speaker)
         elif ANALYST_LABEL_RE.search(label):
             role = "Analyst"        # e.g. "Unidentified Analyst"
+        elif label in role_map:
+            role = role_map[label]  # management, identified from the intro titles
+        elif label in analyst_full or _surname(label) in analyst_surnames:
+            role = "Analyst"        # named by the operator when handing off Q&A
         else:
-            role = role_map.get(label)
-            if role is None:
-                role = "Analyst" if in_qa else "Other"
+            # Unknown speaker. In the Q&A the analysts are the ones the operator
+            # announced (handled above), so an unannounced voice is management
+            # responding; before the Q&A it is an unlabelled participant.
+            role = "Other"
 
         if role == "Operator":
             section = "operator"
