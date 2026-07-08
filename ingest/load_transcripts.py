@@ -188,6 +188,13 @@ def main() -> int:
         )
     assert isinstance(ds, Dataset)
 
+    # We only need the metadata fields and structured_content here. Dropping the
+    # large `full_text` column avoids decoding it for every row, which is a big
+    # speedup over the full dataset.
+    drop = [c for c in ("full_text",) if c in ds.column_names]
+    if drop:
+        ds = ds.remove_columns(drop)
+
     n = ds.num_rows if not LIMIT else min(LIMIT, ds.num_rows)
     print(f"Loading {n:,} transcripts from {KURRY_DIR} ...")
 
@@ -232,8 +239,10 @@ def main() -> int:
             con.execute("INSERT INTO utterances SELECT * FROM _u")
             utterance_rows = []
 
-    for i in range(n):
-        row = ds[i]
+    # Stream with the dataset iterator (far faster than per-row ds[i] indexing).
+    for i, row in enumerate(ds):
+        if LIMIT and i >= LIMIT:
+            break
         sym = (row.get("symbol") or "").strip() if row.get("symbol") else ""
         name = (row.get("company_name") or "").strip() if row.get("company_name") else ""
         year = row.get("year")
