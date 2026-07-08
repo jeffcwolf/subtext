@@ -64,19 +64,29 @@ RUN_EXPLORE=1 ./ingest/run_ingest.sh   # also print the Step 1 exploration
 
 ### Speaker & section classification
 
-- **Speaker role** (`CEO`/`CFO`/`COO`/`IR`/`Analyst`/`Operator`/`Other`):
-  titles are usually stated once when a speaker is introduced, so
-  `load_transcripts.py` learns a name→role map from labelled segments, then
-  applies it to unlabelled Q&A mentions (unlabelled Q&A voices default to
-  analysts).
-- **Section** (`prepared_remarks`/`qa_question`/`qa_response`/`operator`/`other`):
-  the operator's "question-and-answer session" announcement marks the Q&A
-  boundary; management before it is prepared remarks, after it is Q&A responses,
-  analysts are questions.
+In this dataset the speaker labels are **bare names** with no titles
+(`'Mike McMullen'`), so:
 
-The role regexes and the Q&A-transition patterns are seeded from a first read of
-the data; run `ingest/explore_data.py` on the real dataset to tune them (its
-speaker-label survey shows exactly where the heuristics need adjustment).
+- **Speaker role** (`CEO`/`CFO`/`COO`/`IR`/`Analyst`/`Operator`/`Other`): roles
+  are inferred from how people are introduced in the prepared remarks
+  ("... Mike McMullen, Agilent's President and CEO; and Bob McMahon, ... CFO").
+  `load_transcripts.py` parses those intros into a name→role map (the leftmost
+  chief title wins, so "President and CEO" → CEO), then applies it; unmapped
+  voices in the Q&A default to analysts.
+- **Section** (`prepared_remarks`/`qa_question`/`qa_response`/`operator`/`other`):
+  the Q&A boundary is the operator turn that actually opens questions
+  ("your first question comes from the line of …") — not the opening disclaimer,
+  which mentions the "question-and-answer session" up front. Management before
+  the boundary is prepared remarks, after it is Q&A responses; analysts are
+  questions.
+
+These heuristics were tuned against the real dataset. The load prints a
+**classification-health** summary (share of transcripts with a detected Q&A
+boundary and an identified CEO/CFO); `ingest/explore_data.py`'s speaker-label
+and Q&A-transition surveys show where any remaining tuning is needed.
+
+The dataset has no `transcript_id`, so one is synthesized from
+ticker/year/quarter (collision-suffixed) for the `transcripts` primary key.
 
 ### Network notes
 
