@@ -95,3 +95,41 @@ block: the HuggingFace download (`download_data.py`) and the DuckDB `fts`
 extension install (`build_indices.py`, from `extensions.duckdb.org`). Run those
 where the hosts are reachable, or allowlist them; the extension is then cached
 under `~/.duckdb/extensions` and DuckDB reuses it offline.
+
+## Phase 2 — Web app
+
+`site/` is a Leptos 0.8 + Axum 0.8 web app. Leptos renders each page to HTML
+server-side (no WASM/hydration); Axum serves them; charts are pure inline SVG;
+styling is a single hand-written stylesheet (no framework). It reads
+`./data/subtext.duckdb` read-only via `spawn_blocking`.
+
+The `duckdb` crate is pinned to `1.10504.x`, which bundles libduckdb **1.5.4** —
+matching the version the Python pipeline writes, so the storage format and the
+`fts` extension line up.
+
+### Run
+
+```bash
+cd site
+# Point at the database built by the ingest pipeline (default: data/subtext.duckdb)
+SUBTEXT_DB=../data/subtext.duckdb cargo run --release
+# then open http://127.0.0.1:3000
+```
+
+Environment variables: `SUBTEXT_DB` (path to the DuckDB file) and `SUBTEXT_ADDR`
+(bind address, default `127.0.0.1:3000`). The first build compiles the bundled
+libduckdb and is slow (several minutes); later builds are fast.
+
+### Routes
+
+| Route | What it shows |
+|---|---|
+| `/` | Description, search box, most-covered companies |
+| `/company/{ticker}` | Sentiment timeline, CEO-vs-CFO panel, prepared-vs-Q&A panel, recent transcripts |
+| `/transcript/{id}` | The full call as utterances with role badges, section tags, and per-turn sentiment |
+| `/search` | BM25 full-text search with ticker / role / section filters |
+| `/about` | Data sources and methodology |
+
+`/search` needs the `fts` extension loadable at runtime (installed during
+`build_indices.py`); if it isn't, search degrades to an "unavailable" message
+while the rest of the app works.
