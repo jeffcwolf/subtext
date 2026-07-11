@@ -11,7 +11,7 @@ Architecture (two phases):
    transcript dataset, runs Loughran-McDonald sentiment, and loads everything
    into a DuckDB database.
 2. **Rust web application** (`site/`) — Leptos 0.8 + Axum 0.8 serving the
-   analytical interface, reading from DuckDB. *(Phase 2, not built yet.)*
+   analytical interface, reading from DuckDB. 
 
 ## Phase 1 — Ingestion pipeline
 
