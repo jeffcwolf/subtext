@@ -51,6 +51,39 @@ def test_find_qa_start_skips_the_disclaimer_and_finds_the_real_open():
     assert lt.find_qa_start(segments) == 2
 
 
+def test_is_nonspeaker_flags_roster_headers_and_boilerplate():
+    assert lt.is_nonspeaker("Executives")
+    assert lt.is_nonspeaker("Q&A")
+    assert lt.is_nonspeaker("Corporate Participants")
+    assert lt.is_nonspeaker("- - -")  # punctuation-only artifact
+
+
+def test_is_nonspeaker_keeps_real_speakers_including_unlabelled_ones():
+    assert not lt.is_nonspeaker("Tim Cook")
+    # An empty label is a real but unlabelled speaker — it must be kept.
+    assert not lt.is_nonspeaker("")
+
+
+def test_extract_announced_analysts_reads_operator_routing_only():
+    segments = [
+        {
+            "speaker": "Operator",
+            "text": "Our first question comes from the line of Jane Doe with Big Bank.",
+        },
+        {
+            "speaker": "Operator",
+            "text": "Next question is from John Smith of Aequitas.",
+        },
+        {
+            "speaker": "Tim Cook",
+            "text": "This is not an operator line, so it is ignored.",
+        },
+    ]
+    full, surnames = lt.extract_announced_analysts(segments)
+    assert {"Jane Doe", "John Smith"} <= full
+    assert {"Doe", "Smith"} <= surnames
+
+
 def test_find_qa_start_returns_len_when_no_qa_detected():
     segments = [
         {"speaker": "Operator", "text": "Welcome to the call."},

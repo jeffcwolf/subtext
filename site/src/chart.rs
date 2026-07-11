@@ -231,3 +231,52 @@ pub fn legend(series: &[Series]) -> String {
     out.push_str("</div>");
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_chart_with_no_points_shows_a_placeholder_not_an_svg() {
+        let out = line_chart(&[], &[]);
+        assert!(out.contains("No sentiment data"), "got: {out}");
+        assert!(!out.contains("<svg"));
+    }
+
+    #[test]
+    fn line_chart_renders_labels_and_series_class_and_skips_gaps() {
+        let series = Series {
+            label: "Overall".into(),
+            class: "s-overall".into(),
+            values: vec![Some(0.01), None, Some(-0.02)],
+        };
+        let labels = ["2021 Q1".to_string(), "2021 Q2".into(), "2021 Q3".into()];
+        let out = line_chart(&labels, std::slice::from_ref(&series));
+        assert!(out.contains("<svg"));
+        assert!(out.contains("2021 Q1"), "x labels present: {out}");
+        assert!(out.contains("s-overall"), "series class present");
+        // Two present points -> two data dots; the None is a gap, not a dot.
+        assert_eq!(out.matches("<circle").count(), 2);
+    }
+
+    #[test]
+    fn metric_chart_with_all_missing_values_shows_a_placeholder() {
+        let out = metric_chart(&["Q1".to_string()], &[None], "s-eps", "$");
+        assert_eq!(out, r#"<p class="muted">No data.</p>"#);
+    }
+
+    #[test]
+    fn metric_chart_prefixes_axis_tick_labels() {
+        let out = metric_chart(
+            &["Q1".to_string(), "Q2".into()],
+            &[Some(1.0), Some(2.0)],
+            "s-eps",
+            "$",
+        );
+        assert!(out.contains("<svg"));
+        assert!(
+            out.contains("$1.00") || out.contains("$2.00"),
+            "prefixed ticks: {out}"
+        );
+    }
+}

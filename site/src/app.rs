@@ -206,4 +206,19 @@ mod tests {
         assert_eq!(role_class("CEO"), "role-ceo");
         assert_eq!(role_class("Chairman"), "role-other");
     }
+
+    #[test]
+    fn pill_class_combines_base_and_sentiment_class() {
+        assert_eq!(pill_class(Some(0.01)), "pill pos");
+        assert_eq!(pill_class(Some(-0.01)), "pill neg");
+        assert_eq!(pill_class(None), "pill na");
+    }
+
+    #[test]
+    fn money_and_ratio_formatting_handle_missing_values() {
+        assert_eq!(fmt_money(Some(3.5)), "$3.50");
+        assert_eq!(fmt_money(None), "—");
+        assert_eq!(fmt_ratio(Some(12.34)), "12.3");
+        assert_eq!(fmt_ratio(None), "—");
+    }
 }

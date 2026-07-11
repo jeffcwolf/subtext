@@ -19,3 +19,25 @@ pub fn net_sentiment_where(filter: &str) -> String {
         f = filter
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aggregate_form_divides_signed_counts_by_total_words() {
+        assert!(NET_SENTIMENT.contains("SUM(s.positive_count)"));
+        assert!(NET_SENTIMENT.contains("SUM(s.negative_count)"));
+        assert!(NET_SENTIMENT.contains("NULLIF(SUM(s.total_words), 0)"));
+    }
+
+    #[test]
+    fn filtered_form_gates_all_three_aggregates() {
+        // The filter must gate positives, negatives, AND the word count — if it
+        // reached only some of them, a slice's net would be divided by a
+        // different population than it was summed over.
+        let sql = net_sentiment_where("u.speaker_role = 'CEO'");
+        assert_eq!(sql.matches("u.speaker_role = 'CEO'").count(), 3);
+        assert!(sql.contains("NULLIF"));
+    }
+}
