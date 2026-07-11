@@ -1,5 +1,7 @@
 # Subtext
 
+[![CI](https://github.com/jeffcwolf/subtext/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffcwolf/subtext/actions/workflows/ci.yml)
+
 **Reading between the lines of earnings calls.** Subtext applies NLP to
 earnings-call transcripts — tone shifts, hedging, CEO-vs-CFO divergence, and the
 gap between prepared remarks and Q&A. See [`SPEC.md`](SPEC.md) for the full
@@ -11,7 +13,16 @@ Architecture (two phases):
    transcript dataset, runs Loughran-McDonald sentiment, and loads everything
    into a DuckDB database.
 2. **Rust web application** (`site/`) — Leptos 0.8 + Axum 0.8 serving the
-   analytical interface, reading from DuckDB. 
+   analytical interface, reading from DuckDB.
+
+## Status
+
+MVP, actively developed. Both phases are complete and green in CI: the pipeline
+ingests the full kurry dataset into DuckDB, and the web app serves the home,
+company, transcript, sector, search, and about routes. It runs locally against a
+locally-built database; it is not yet deployed to a public URL. Phase-2 features
+(a hedging/deflection dictionary, promise tracking, Q&A response-quality scoring,
+and Edgar Explorer cross-referencing) are planned — see [`SPEC.md`](SPEC.md).
 
 ## Phase 1 — Ingestion pipeline
 
