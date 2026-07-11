@@ -23,12 +23,18 @@ env:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The Cargo project lives in site/, not the repo root.
+        working-directory: site
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: site
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
