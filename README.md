@@ -111,14 +111,18 @@ matching the version the Python pipeline writes, so the storage format and the
 
 ```bash
 cd site
-# Point at the database built by the ingest pipeline (default: data/subtext.duckdb)
-SUBTEXT_DB=../data/subtext.duckdb cargo run --release
-# then open http://127.0.0.1:3000
+cargo run --release          # then open http://127.0.0.1:3000
 ```
 
-Environment variables: `SUBTEXT_DB` (path to the DuckDB file) and `SUBTEXT_ADDR`
+The app finds `data/subtext.duckdb` automatically by searching up from the
+working directory, so `cargo run` works from `site/` or the repo root with no
+configuration. It prints the resolved path and row counts at startup, and fails
+fast with a clear message if the database isn't found.
+
+Overrides: `SUBTEXT_DB` (explicit path to the DuckDB file) and `SUBTEXT_ADDR`
 (bind address, default `127.0.0.1:3000`). The first build compiles the bundled
-libduckdb and is slow (several minutes); later builds are fast.
+libduckdb and is slow (several minutes); later builds are fast. For auto-rebuild
+on save during development, `cargo watch -x run` (from the `cargo-watch` crate).
 
 ### Routes
 

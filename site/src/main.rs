@@ -16,9 +16,35 @@ use axum::{http::header, response::IntoResponse, routing::get, Router};
 
 use db::Db;
 
+/// Locate the DuckDB file. `SUBTEXT_DB` wins; otherwise search for
+/// `data/subtext.duckdb` up the directory tree from the current dir and from
+/// the crate dir, so `cargo run` works from either `site/` or the repo root
+/// without any env var.
+fn resolve_db_path() -> String {
+    if let Ok(p) = std::env::var("SUBTEXT_DB") {
+        return p;
+    }
+    let mut starts: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        starts.push(cwd);
+    }
+    starts.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    for start in starts {
+        let mut dir = Some(start.as_path());
+        while let Some(d) = dir {
+            let candidate = d.join("data").join("subtext.duckdb");
+            if candidate.exists() {
+                return candidate.to_string_lossy().into_owned();
+            }
+            dir = d.parent();
+        }
+    }
+    "data/subtext.duckdb".to_string() // fall through to the fail-fast message
+}
+
 #[tokio::main]
 async fn main() {
-    let db_path = std::env::var("SUBTEXT_DB").unwrap_or_else(|_| "data/subtext.duckdb".to_string());
+    let db_path = resolve_db_path();
     let abs = std::fs::canonicalize(&db_path)
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| db_path.clone());
@@ -28,9 +54,8 @@ async fn main() {
     // SUBTEXT_DB at the repo-root data/subtext.duckdb.
     if !std::path::Path::new(&db_path).exists() {
         eprintln!(
-            "ERROR: database not found at '{db_path}' (looked in {})\n\
-             Point SUBTEXT_DB at the file built by the ingest pipeline, e.g.:\n\
-             \x20   SUBTEXT_DB=../data/subtext.duckdb cargo run --release",
+            "ERROR: could not find data/subtext.duckdb (searched up from {}).\n\
+             Build it with `./ingest/run_ingest.sh`, or set SUBTEXT_DB to its path.",
             std::env::current_dir().map(|d| d.display().to_string()).unwrap_or_default()
         );
         std::process::exit(1);
