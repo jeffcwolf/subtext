@@ -113,6 +113,12 @@ pub fn fmt_sentiment(v: Option<f64>) -> String {
     }
 }
 
+/// The CSS classes for a sentiment "pill" — e.g. `"pill pos"` — used wherever a
+/// net-sentiment value is shown as a coloured chip.
+pub fn pill_class(v: Option<f64>) -> String {
+    format!("pill {}", sentiment_class(v))
+}
+
 /// Format an optional dollar figure (e.g. EPS).
 pub fn fmt_money(v: Option<f64>) -> String {
     match v {

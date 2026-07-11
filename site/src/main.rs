@@ -9,6 +9,7 @@ mod home;
 mod lexicon;
 mod search;
 mod sectors;
+mod sql;
 mod transcript;
 mod types;
 

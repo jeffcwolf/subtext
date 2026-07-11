@@ -10,11 +10,8 @@ use leptos::prelude::*;
 
 use crate::app;
 use crate::db::Db;
+use crate::sql::NET_SENTIMENT;
 use crate::types::{SectorCompany, SectorSummary};
-
-// Net sentiment for a company/sector = (Σpositive − Σnegative) / Σwords.
-const NET: &str = "(SUM(s.positive_count) - SUM(s.negative_count))::DOUBLE \
-                   / NULLIF(SUM(s.total_words), 0)";
 
 pub async fn list_handler(State(db): State<Db>) -> Response {
     match load_sectors(&db).await {
@@ -36,7 +33,7 @@ pub async fn detail_handler(State(db): State<Db>, Path(sector): Path<String>) ->
 async fn load_sectors(db: &Db) -> anyhow::Result<Vec<SectorSummary>> {
     db.call(|conn| {
         let sql = format!(
-            "SELECT c.sector, COUNT(DISTINCT c.ticker), COUNT(DISTINCT t.transcript_id), {NET}
+            "SELECT c.sector, COUNT(DISTINCT c.ticker), COUNT(DISTINCT t.transcript_id), {NET_SENTIMENT}
              FROM companies c
              JOIN transcripts t USING (ticker)
              JOIN utterances u USING (transcript_id)
@@ -62,14 +59,14 @@ async fn load_sectors(db: &Db) -> anyhow::Result<Vec<SectorSummary>> {
 async fn load_sector(db: &Db, sector: String) -> anyhow::Result<Vec<SectorCompany>> {
     db.call(move |conn| {
         let sql = format!(
-            "SELECT c.ticker, c.name, COUNT(DISTINCT t.transcript_id), {NET}
+            "SELECT c.ticker, c.name, COUNT(DISTINCT t.transcript_id), {NET_SENTIMENT}
              FROM companies c
              JOIN transcripts t USING (ticker)
              JOIN utterances u USING (transcript_id)
              JOIN sentiment_facts s USING (utterance_id)
              WHERE c.sector = ?
              GROUP BY c.ticker, c.name
-             ORDER BY {NET} DESC NULLS LAST"
+             ORDER BY {NET_SENTIMENT} DESC NULLS LAST"
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![sector], |r| {
@@ -101,7 +98,7 @@ fn render_list(sectors: Vec<SectorSummary>) -> String {
                 <tbody>
                 {sectors.into_iter().map(|s| {
                     let href = format!("/sector/{}", app::urlencode(&s.sector));
-                    let pill = format!("pill {}", app::sentiment_class(s.avg_sentiment));
+                    let pill = app::pill_class(s.avg_sentiment);
                     view! {
                         <tr>
                             <td><a href=href>{s.sector.clone()}</a></td>
@@ -147,9 +144,9 @@ fn render_detail(sector: &str, companies: Vec<SectorCompany>) -> String {
         .into_iter()
         .enumerate()
         .map(|(i, c)| {
-            let pill = format!("pill {}", app::sentiment_class(c.avg_sentiment));
+            let pill = app::pill_class(c.avg_sentiment);
             let delta = c.avg_sentiment.map(|v| v - mean);
-            let delta_pill = format!("pill {}", app::sentiment_class(delta));
+            let delta_pill = app::pill_class(delta);
             format!(
                 r#"<tr>
   <td class="num mono">{rank}</td>
@@ -171,7 +168,7 @@ fn render_detail(sector: &str, companies: Vec<SectorCompany>) -> String {
         })
         .collect();
 
-    let mpill = format!("pill {}", app::sentiment_class(Some(mean)));
+    let mpill = app::pill_class(Some(mean));
     format!(
         r#"<section class="card">
   <p class="muted"><a href="/sectors">← All sectors</a></p>

@@ -25,16 +25,6 @@ pub async fn handler(State(db): State<Db>, Path(ticker): Path<String>) -> Respon
     }
 }
 
-/// One expression that computes net sentiment for a filtered subset of a call.
-fn net_expr(filter: &str) -> String {
-    format!(
-        "(SUM(CASE WHEN {f} THEN s.positive_count ELSE 0 END) \
-          - SUM(CASE WHEN {f} THEN s.negative_count ELSE 0 END))::DOUBLE \
-         / NULLIF(SUM(CASE WHEN {f} THEN s.total_words ELSE 0 END), 0)",
-        f = filter
-    )
-}
-
 async fn load(db: &Db, ticker: String) -> anyhow::Result<Option<(CompanyHeader, Vec<CallPoint>)>> {
     db.call(move |conn| {
         // Header (LEFT JOIN so a known ticker with no calls still returns a row).
@@ -74,11 +64,11 @@ async fn load(db: &Db, ticker: String) -> anyhow::Result<Option<(CompanyHeader, 
              WHERE t.ticker = ?
              GROUP BY t.transcript_id, t.fiscal_year, t.fiscal_quarter, t.call_date
              ORDER BY t.call_date NULLS LAST, t.fiscal_year, t.fiscal_quarter",
-            overall = net_expr("TRUE"),
-            ceo = net_expr("u.speaker_role = 'CEO'"),
-            cfo = net_expr("u.speaker_role = 'CFO'"),
-            prep = net_expr("u.section = 'prepared_remarks'"),
-            qa = net_expr("u.section = 'qa_response'"),
+            overall = crate::sql::net_sentiment_where("TRUE"),
+            ceo = crate::sql::net_sentiment_where("u.speaker_role = 'CEO'"),
+            cfo = crate::sql::net_sentiment_where("u.speaker_role = 'CFO'"),
+            prep = crate::sql::net_sentiment_where("u.section = 'prepared_remarks'"),
+            qa = crate::sql::net_sentiment_where("u.section = 'qa_response'"),
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![ticker], |r| {
@@ -217,7 +207,7 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
                 <tbody>
                 {recent.into_iter().map(|c| {
                     let href = format!("/transcript/{}", c.transcript_id);
-                    let pill = format!("pill {}", app::sentiment_class(c.overall));
+                    let pill = app::pill_class(c.overall);
                     view! {
                         <tr>
                             <td>{c.label.clone()}</td>
