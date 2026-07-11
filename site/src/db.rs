@@ -33,7 +33,7 @@ impl Db {
         .await?
     }
 
-    /// Like [`call`], but loads the FTS extension first (needed for BM25 search).
+    /// Like [`Db::call`], but loads the FTS extension first (needed for BM25 search).
     /// Returns an error the caller can degrade on if the extension is missing.
     pub async fn call_fts<T, F>(&self, f: F) -> anyhow::Result<T>
     where

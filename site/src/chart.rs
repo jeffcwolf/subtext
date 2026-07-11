@@ -10,6 +10,8 @@ pub struct Series {
     pub values: Vec<Option<f64>>,
 }
 
+// Canvas size and margins in SVG user units: width/height, then the
+// left/right/top/bottom margins that reserve room for the axis tick labels.
 const W: f64 = 680.0;
 const H: f64 = 260.0;
 const ML: f64 = 46.0;
