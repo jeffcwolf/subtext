@@ -13,8 +13,8 @@ or point LM_DICT at it explicitly. ./data/ is gitignored, so the file stays
 out of version control.
 
 Usage:
-    python ingest/compute_sentiment.py
-    LM_DICT=/path/to/LM_MasterDictionary.csv python ingest/compute_sentiment.py
+    python pipeline/compute_sentiment.py
+    LM_DICT=/path/to/LM_MasterDictionary.csv python pipeline/compute_sentiment.py
 """
 
 from __future__ import annotations
@@ -102,11 +102,19 @@ def score_text(text: str, sets: dict[str, set[str]]) -> tuple:
                 hit = True
         if hit:
             lm_hits += 1
-    net = ((counts["positive"] - counts["negative"]) / total_words
-           if total_words else 0.0)
-    return (counts["positive"], counts["negative"], counts["uncertainty"],
-            counts["litigious"], counts["constraining"], lm_hits,
-            total_words, net)
+    net = (
+        (counts["positive"] - counts["negative"]) / total_words if total_words else 0.0
+    )
+    return (
+        counts["positive"],
+        counts["negative"],
+        counts["uncertainty"],
+        counts["litigious"],
+        counts["constraining"],
+        lm_hits,
+        total_words,
+        net,
+    )
 
 
 def main() -> int:
@@ -133,7 +141,8 @@ def main() -> int:
     while True:
         rows = con.execute(
             "SELECT utterance_id, text FROM utterances "
-            "ORDER BY utterance_id LIMIT ? OFFSET ?", [BATCH, offset]
+            "ORDER BY utterance_id LIMIT ? OFFSET ?",
+            [BATCH, offset],
         ).fetchall()
         if not rows:
             break
@@ -159,9 +168,11 @@ def main() -> int:
         "SUM(positive_count), SUM(negative_count) FROM sentiment_facts"
     ).fetchone()
     con.close()
-    print(f"\nWrote {summary[0]:,} sentiment rows. "
-          f"Mean net_sentiment={summary[1]:.5f}, "
-          f"total positive={summary[2]:,}, total negative={summary[3]:,}")
+    print(
+        f"\nWrote {summary[0]:,} sentiment rows. "
+        f"Mean net_sentiment={summary[1]:.5f}, "
+        f"total positive={summary[2]:,}, total negative={summary[3]:,}"
+    )
     print("Sentiment complete.")
     return 0
 

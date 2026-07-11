@@ -71,15 +71,18 @@ pub fn urlencode(s: &str) -> String {
     out
 }
 
-/// A 500 page for an unexpected error.
+/// A 500 page for an unexpected error. The detail is logged server-side rather
+/// than shown to the client, so a public instance doesn't leak query internals,
+/// schema, or filesystem paths in error text.
 pub fn error_response(err: anyhow::Error) -> Response {
-    let body = format!(
-        r#"<section class="card"><h1>Something went wrong</h1>
-<p class="muted">The database query failed.</p>
-<pre class="errbox">{}</pre></section>"#,
-        escape(&err.to_string())
-    );
-    (StatusCode::INTERNAL_SERVER_ERROR, Html(shell("Error", &body))).into_response()
+    eprintln!("request error: {err:#}");
+    let body = r#"<section class="card"><h1>Something went wrong</h1>
+<p class="muted">The database query failed. Please try again.</p></section>"#;
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Html(shell("Error", body)),
+    )
+        .into_response()
 }
 
 /// A 404 page.
@@ -108,6 +111,12 @@ pub fn fmt_sentiment(v: Option<f64>) -> String {
         Some(x) => format!("{:+.1}", x * 1000.0),
         None => "—".to_string(),
     }
+}
+
+/// The CSS classes for a sentiment "pill" — e.g. `"pill pos"` — used wherever a
+/// net-sentiment value is shown as a coloured chip.
+pub fn pill_class(v: Option<f64>) -> String {
+    format!("pill {}", sentiment_class(v))
 }
 
 /// Format an optional dollar figure (e.g. EPS).
@@ -147,5 +156,69 @@ pub fn role_class(role: &str) -> &'static str {
         "Analyst" => "role-analyst",
         "Operator" => "role-operator",
         _ => "role-other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_covers_all_html_metacharacters() {
+        assert_eq!(
+            escape(r#"<a href="x">& '"#),
+            "&lt;a href=&quot;x&quot;&gt;&amp; &#39;"
+        );
+        // Plain text is passed through untouched.
+        assert_eq!(escape("Consolidated revenue"), "Consolidated revenue");
+    }
+
+    #[test]
+    fn urlencode_preserves_unreserved_and_encodes_the_rest() {
+        // Unreserved characters (RFC 3986) survive verbatim.
+        assert_eq!(urlencode("AZaz09-_.~"), "AZaz09-_.~");
+        // Spaces and other bytes are percent-encoded, uppercase hex.
+        assert_eq!(urlencode("Consumer Staples"), "Consumer%20Staples");
+        assert_eq!(urlencode("S&P/500"), "S%26P%2F500");
+    }
+
+    #[test]
+    fn sentiment_class_uses_a_dead_band_around_zero() {
+        assert_eq!(sentiment_class(Some(0.006)), "pos");
+        assert_eq!(sentiment_class(Some(-0.006)), "neg");
+        assert_eq!(sentiment_class(Some(0.0)), "neu");
+        assert_eq!(sentiment_class(Some(0.005)), "neu"); // boundary is exclusive
+        assert_eq!(sentiment_class(None), "na");
+    }
+
+    #[test]
+    fn fmt_sentiment_scales_by_1000_and_signs() {
+        assert_eq!(fmt_sentiment(Some(0.0123)), "+12.3");
+        assert_eq!(fmt_sentiment(Some(-0.002)), "-2.0");
+        assert_eq!(fmt_sentiment(None), "—");
+    }
+
+    #[test]
+    fn labels_map_known_codes_and_fall_back() {
+        assert_eq!(section_label("qa_response"), "Q&A response");
+        assert_eq!(section_label("prepared_remarks"), "Prepared remarks");
+        assert_eq!(section_label("something_else"), "Other");
+        assert_eq!(role_class("CEO"), "role-ceo");
+        assert_eq!(role_class("Chairman"), "role-other");
+    }
+
+    #[test]
+    fn pill_class_combines_base_and_sentiment_class() {
+        assert_eq!(pill_class(Some(0.01)), "pill pos");
+        assert_eq!(pill_class(Some(-0.01)), "pill neg");
+        assert_eq!(pill_class(None), "pill na");
+    }
+
+    #[test]
+    fn money_and_ratio_formatting_handle_missing_values() {
+        assert_eq!(fmt_money(Some(3.5)), "$3.50");
+        assert_eq!(fmt_money(None), "—");
+        assert_eq!(fmt_ratio(Some(12.34)), "12.3");
+        assert_eq!(fmt_ratio(None), "—");
     }
 }

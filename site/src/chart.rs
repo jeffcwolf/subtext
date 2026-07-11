@@ -10,6 +10,8 @@ pub struct Series {
     pub values: Vec<Option<f64>>,
 }
 
+// Canvas size and margins in SVG user units: width/height, then the
+// left/right/top/bottom margins that reserve room for the axis tick labels.
 const W: f64 = 680.0;
 const H: f64 = 260.0;
 const ML: f64 = 46.0;
@@ -128,7 +130,12 @@ pub fn line_chart(x_labels: &[String], series: &[Series]) -> String {
 /// A single-series line chart for a positive metric (forward EPS, P/E …),
 /// auto-scaled to the data's own [min, max] rather than centred on zero.
 /// `prefix` is prepended to axis labels (e.g. "$").
-pub fn metric_chart(x_labels: &[String], values: &[Option<f64>], class: &str, prefix: &str) -> String {
+pub fn metric_chart(
+    x_labels: &[String],
+    values: &[Option<f64>],
+    class: &str,
+    prefix: &str,
+) -> String {
     let n = x_labels.len();
     let present: Vec<f64> = values.iter().flatten().copied().collect();
     if n == 0 || present.is_empty() {
@@ -148,7 +155,11 @@ pub fn metric_chart(x_labels: &[String], values: &[Option<f64>], class: &str, pr
     let (lo, hi) = (lo - pad, hi + pad);
 
     let x_at = |i: usize| -> f64 {
-        if n == 1 { ML + iw / 2.0 } else { ML + iw * (i as f64) / ((n - 1) as f64) }
+        if n == 1 {
+            ML + iw / 2.0
+        } else {
+            ML + iw * (i as f64) / ((n - 1) as f64)
+        }
     };
     let y_at = |v: f64| -> f64 { MT + ih - (v - lo) / (hi - lo) * ih };
 
@@ -164,7 +175,10 @@ pub fn metric_chart(x_labels: &[String], values: &[Option<f64>], class: &str, pr
         ));
         svg.push_str(&format!(
             r#"<text class="tick" x="{tx:.1}" y="{ty:.1}" text-anchor="end">{p}{val:.2}</text>"#,
-            tx = ML - 6.0, ty = y + 3.0, p = escape(prefix), val = v
+            tx = ML - 6.0,
+            ty = y + 3.0,
+            p = escape(prefix),
+            val = v
         ));
     }
     let step = (((n as f64) / 8.0).ceil() as usize).max(1);
@@ -172,7 +186,9 @@ pub fn metric_chart(x_labels: &[String], values: &[Option<f64>], class: &str, pr
     while i < n {
         svg.push_str(&format!(
             r#"<text class="tick" x="{x:.1}" y="{y:.1}" text-anchor="middle">{lbl}</text>"#,
-            x = x_at(i), y = H - 12.0, lbl = escape(&x_labels[i])
+            x = x_at(i),
+            y = H - 12.0,
+            lbl = escape(&x_labels[i])
         ));
         i += step;
     }
@@ -187,7 +203,10 @@ pub fn metric_chart(x_labels: &[String], values: &[Option<f64>], class: &str, pr
             pen = false;
         }
     }
-    svg.push_str(&format!(r#"<path class="series {cls}" d="{d}"/>"#, cls = escape(class)));
+    svg.push_str(&format!(
+        r#"<path class="series {cls}" d="{d}"/>"#,
+        cls = escape(class)
+    ));
     for (idx, v) in values.iter().enumerate() {
         if let Some(val) = v {
             svg.push_str(&format!(
@@ -213,4 +232,53 @@ pub fn legend(series: &[Series]) -> String {
     }
     out.push_str("</div>");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_chart_with_no_points_shows_a_placeholder_not_an_svg() {
+        let out = line_chart(&[], &[]);
+        assert!(out.contains("No sentiment data"), "got: {out}");
+        assert!(!out.contains("<svg"));
+    }
+
+    #[test]
+    fn line_chart_renders_labels_and_series_class_and_skips_gaps() {
+        let series = Series {
+            label: "Overall".into(),
+            class: "s-overall".into(),
+            values: vec![Some(0.01), None, Some(-0.02)],
+        };
+        let labels = ["2021 Q1".to_string(), "2021 Q2".into(), "2021 Q3".into()];
+        let out = line_chart(&labels, std::slice::from_ref(&series));
+        assert!(out.contains("<svg"));
+        assert!(out.contains("2021 Q1"), "x labels present: {out}");
+        assert!(out.contains("s-overall"), "series class present");
+        // Two present points -> two data dots; the None is a gap, not a dot.
+        assert_eq!(out.matches("<circle").count(), 2);
+    }
+
+    #[test]
+    fn metric_chart_with_all_missing_values_shows_a_placeholder() {
+        let out = metric_chart(&["Q1".to_string()], &[None], "s-eps", "$");
+        assert_eq!(out, r#"<p class="muted">No data.</p>"#);
+    }
+
+    #[test]
+    fn metric_chart_prefixes_axis_tick_labels() {
+        let out = metric_chart(
+            &["Q1".to_string(), "Q2".into()],
+            &[Some(1.0), Some(2.0)],
+            "s-eps",
+            "$",
+        );
+        assert!(out.contains("<svg"));
+        assert!(
+            out.contains("$1.00") || out.contains("$2.00"),
+            "prefixed ticks: {out}"
+        );
+    }
 }

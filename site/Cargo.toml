@@ -2,6 +2,10 @@
 name = "subtext"
 version = "0.1.0"
 edition = "2021"
+description = "Web app that applies NLP to earnings-call transcripts — tone, hedging, CEO-vs-CFO divergence, prepared-remarks-vs-Q&A."
+authors = ["Jeffrey C. Wolf"]
+license = "MIT"
+repository = "https://github.com/jeffcwolf/subtext"
 
 [[bin]]
 name = "subtext"

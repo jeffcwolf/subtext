@@ -25,37 +25,23 @@ pub async fn handler(State(db): State<Db>, Path(ticker): Path<String>) -> Respon
     }
 }
 
-/// One expression that computes net sentiment for a filtered subset of a call.
-fn net_expr(filter: &str) -> String {
-    format!(
-        "(SUM(CASE WHEN {f} THEN s.positive_count ELSE 0 END) \
-          - SUM(CASE WHEN {f} THEN s.negative_count ELSE 0 END))::DOUBLE \
-         / NULLIF(SUM(CASE WHEN {f} THEN s.total_words ELSE 0 END), 0)",
-        f = filter
-    )
-}
-
-async fn load(
-    db: &Db,
-    ticker: String,
-) -> anyhow::Result<Option<(CompanyHeader, Vec<CallPoint>)>> {
+async fn load(db: &Db, ticker: String) -> anyhow::Result<Option<(CompanyHeader, Vec<CallPoint>)>> {
     db.call(move |conn| {
         // Header (LEFT JOIN so a known ticker with no calls still returns a row).
         let mut hs = conn.prepare(
-            "SELECT c.name, c.sector, c.industry, COUNT(t.transcript_id),
+            "SELECT c.name, c.sector, COUNT(t.transcript_id),
                     CAST(MIN(t.call_date) AS VARCHAR), CAST(MAX(t.call_date) AS VARCHAR)
              FROM companies c LEFT JOIN transcripts t USING (ticker)
-             WHERE c.ticker = ? GROUP BY c.name, c.sector, c.industry",
+             WHERE c.ticker = ? GROUP BY c.name, c.sector",
         )?;
         let mut hrows = hs.query_map(params![ticker], |r| {
             Ok(CompanyHeader {
                 ticker: ticker.clone(),
                 name: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
                 sector: r.get(1)?,
-                industry: r.get(2)?,
-                transcripts: r.get(3)?,
-                first_date: r.get(4)?,
-                last_date: r.get(5)?,
+                transcripts: r.get(2)?,
+                first_date: r.get(3)?,
+                last_date: r.get(4)?,
             })
         })?;
         let header = match hrows.next() {
@@ -70,8 +56,7 @@ async fn load(
                     CAST(t.call_date AS VARCHAR),
                     {overall} AS overall, {ceo} AS ceo, {cfo} AS cfo,
                     {prep} AS prepared, {qa} AS qa,
-                    MAX(f.eps_ttm) AS eps_ttm, MAX(f.eps_fwd) AS eps_fwd,
-                    MAX(f.pe_fwd) AS pe_fwd
+                    MAX(f.eps_fwd) AS eps_fwd, MAX(f.pe_fwd) AS pe_fwd
              FROM transcripts t
              JOIN utterances u USING (transcript_id)
              JOIN sentiment_facts s USING (utterance_id)
@@ -79,11 +64,11 @@ async fn load(
              WHERE t.ticker = ?
              GROUP BY t.transcript_id, t.fiscal_year, t.fiscal_quarter, t.call_date
              ORDER BY t.call_date NULLS LAST, t.fiscal_year, t.fiscal_quarter",
-            overall = net_expr("TRUE"),
-            ceo = net_expr("u.speaker_role = 'CEO'"),
-            cfo = net_expr("u.speaker_role = 'CFO'"),
-            prep = net_expr("u.section = 'prepared_remarks'"),
-            qa = net_expr("u.section = 'qa_response'"),
+            overall = crate::sql::net_sentiment_where("TRUE"),
+            ceo = crate::sql::net_sentiment_where("u.speaker_role = 'CEO'"),
+            cfo = crate::sql::net_sentiment_where("u.speaker_role = 'CFO'"),
+            prep = crate::sql::net_sentiment_where("u.section = 'prepared_remarks'"),
+            qa = crate::sql::net_sentiment_where("u.section = 'qa_response'"),
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![ticker], |r| {
@@ -96,8 +81,6 @@ async fn load(
             };
             Ok(CallPoint {
                 transcript_id: r.get(0)?,
-                fiscal_year: year,
-                fiscal_quarter: quarter,
                 call_date: r.get(3)?,
                 label,
                 overall: r.get(4)?,
@@ -105,9 +88,8 @@ async fn load(
                 cfo: r.get(6)?,
                 prepared: r.get(7)?,
                 qa: r.get(8)?,
-                eps_ttm: r.get(9)?,
-                eps_fwd: r.get(10)?,
-                pe_fwd: r.get(11)?,
+                eps_fwd: r.get(9)?,
+                pe_fwd: r.get(10)?,
             })
         })?;
         let calls = rows.collect::<Result<Vec<_>, _>>()?;
@@ -124,12 +106,28 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
         values: calls.iter().map(|c| c.overall).collect(),
     };
     let ceo_cfo = [
-        Series { label: "CEO".into(), class: "s-ceo".into(), values: calls.iter().map(|c| c.ceo).collect() },
-        Series { label: "CFO".into(), class: "s-cfo".into(), values: calls.iter().map(|c| c.cfo).collect() },
+        Series {
+            label: "CEO".into(),
+            class: "s-ceo".into(),
+            values: calls.iter().map(|c| c.ceo).collect(),
+        },
+        Series {
+            label: "CFO".into(),
+            class: "s-cfo".into(),
+            values: calls.iter().map(|c| c.cfo).collect(),
+        },
     ];
     let sections = [
-        Series { label: "Prepared remarks".into(), class: "s-prepared".into(), values: calls.iter().map(|c| c.prepared).collect() },
-        Series { label: "Q&A responses".into(), class: "s-qa".into(), values: calls.iter().map(|c| c.qa).collect() },
+        Series {
+            label: "Prepared remarks".into(),
+            class: "s-prepared".into(),
+            values: calls.iter().map(|c| c.prepared).collect(),
+        },
+        Series {
+            label: "Q&A responses".into(),
+            class: "s-qa".into(),
+            values: calls.iter().map(|c| c.qa).collect(),
+        },
     ];
 
     let timeline = chart::line_chart(&labels, std::slice::from_ref(&overall));
@@ -209,7 +207,7 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
                 <tbody>
                 {recent.into_iter().map(|c| {
                     let href = format!("/transcript/{}", c.transcript_id);
-                    let pill = format!("pill {}", app::sentiment_class(c.overall));
+                    let pill = app::pill_class(c.overall);
                     view! {
                         <tr>
                             <td>{c.label.clone()}</td>
@@ -231,23 +229,35 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
 /// A quarter where management tone moved opposite to the forward EPS estimate.
 struct Divergence {
     label: String,
-    ds: f64, // change in overall sentiment vs prior call
-    de: f64, // change in forward EPS estimate vs prior call
+    tone_delta: f64,
+    eps_delta: f64,
     note: &'static str,
 }
 
 impl Divergence {
     fn to_html(&self) -> String {
-        let (sa, sc) = if self.ds > 0.0 { ("↑", "up") } else { ("↓", "down") };
-        let (ea, ec) = if self.de > 0.0 { ("↑", "up") } else { ("↓", "down") };
+        let (sa, sc) = if self.tone_delta > 0.0 {
+            ("↑", "up")
+        } else {
+            ("↓", "down")
+        };
+        let (ea, ec) = if self.eps_delta > 0.0 {
+            ("↑", "up")
+        } else {
+            ("↓", "down")
+        };
         format!(
             r#"<li><span class="when">{lbl}</span>
 <span class="arrow">tone <span class="{sc}">{sa} {sv:+.1}</span></span>
 <span class="arrow">fwd EPS <span class="{ec}">{ea} {ev:+.2}</span></span>
 <span class="note">{note}</span></li>"#,
             lbl = app::escape(&self.label),
-            sc = sc, sa = sa, sv = self.ds * 1000.0,
-            ec = ec, ea = ea, ev = self.de,
+            sc = sc,
+            sa = sa,
+            sv = self.tone_delta * 1000.0,
+            ec = ec,
+            ea = ea,
+            ev = self.eps_delta,
             note = self.note,
         )
     }
@@ -258,23 +268,31 @@ impl Divergence {
 fn compute_divergences(calls: &[CallPoint]) -> Vec<Divergence> {
     let mut out = Vec::new();
     for w in calls.windows(2) {
-        let (a, b) = (&w[0], &w[1]);
-        if let (Some(s0), Some(s1), Some(e0), Some(e1)) =
-            (a.overall, b.overall, a.eps_fwd, b.eps_fwd)
+        let (prev, curr) = (&w[0], &w[1]);
+        if let (Some(prev_tone), Some(tone), Some(prev_eps), Some(eps)) =
+            (prev.overall, curr.overall, prev.eps_fwd, curr.eps_fwd)
         {
-            if e0.abs() < 1e-9 {
+            if prev_eps.abs() < 1e-9 {
                 continue;
             }
-            let ds = s1 - s0;
-            let de = e1 - e0;
-            let rel_de = de / e0.abs();
-            if ds.abs() >= 0.002 && rel_de.abs() >= 0.01 && (ds > 0.0) != (de > 0.0) {
-                let note = if ds > 0.0 {
+            let tone_delta = tone - prev_tone;
+            let eps_delta = eps - prev_eps;
+            let rel_eps_delta = eps_delta / prev_eps.abs();
+            if tone_delta.abs() >= 0.002
+                && rel_eps_delta.abs() >= 0.01
+                && (tone_delta > 0.0) != (eps_delta > 0.0)
+            {
+                let note = if tone_delta > 0.0 {
                     "Tone rose while the forward EPS estimate was cut."
                 } else {
                     "Tone cooled even as the forward EPS estimate rose."
                 };
-                out.push(Divergence { label: b.label.clone(), ds, de, note });
+                out.push(Divergence {
+                    label: curr.label.clone(),
+                    tone_delta,
+                    eps_delta,
+                    note,
+                });
             }
         }
     }

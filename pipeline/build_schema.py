@@ -7,7 +7,7 @@ CLAUDE.md: companies, transcripts, utterances, sentiment_facts. Uses
 schema without touching any other file.
 
 Usage:
-    python ingest/build_schema.py
+    python pipeline/build_schema.py
 """
 
 from __future__ import annotations
@@ -84,7 +84,13 @@ def main() -> int:
         con.execute(SCHEMA)
         tables = [r[0] for r in con.execute("SHOW TABLES").fetchall()]
         print(f"Tables now present: {tables}")
-        for table in ("companies", "transcripts", "utterances", "sentiment_facts", "financials"):
+        for table in (
+            "companies",
+            "transcripts",
+            "utterances",
+            "sentiment_facts",
+            "financials",
+        ):
             cols = con.execute(
                 "SELECT column_name, data_type FROM information_schema.columns "
                 "WHERE table_name = ? ORDER BY ordinal_position",

@@ -7,7 +7,7 @@ from the HuggingFace Hub once and persists it with ``save_to_disk`` so every
 later step can load it offline via ``datasets.load_from_disk``.
 
 Usage:
-    python ingest/download_data.py
+    python pipeline/download_data.py
 
 Requires outbound network access to huggingface.co. If your environment blocks
 that host, run this script somewhere with access and copy the resulting
@@ -45,7 +45,7 @@ def main() -> int:
     OUT_DIR.parent.mkdir(parents=True, exist_ok=True)
     print(f"\nSaving to {OUT_DIR} ...")
     dataset.save_to_disk(str(OUT_DIR))
-    print("Done. You can now run: python ingest/explore_data.py")
+    print("Done. You can now run: python pipeline/explore_data.py")
     return 0
 
 

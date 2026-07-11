@@ -11,7 +11,7 @@ real data instead of guesswork:
                                      a name concentrated in a single ticker
 
 Usage:
-    python ingest/diagnose_classification.py
+    python pipeline/diagnose_classification.py
 """
 
 from __future__ import annotations
@@ -121,9 +121,11 @@ def main() -> int:
     ).fetchone()
     if split and split[1]:
         pct = 100.0 * (split[0] or 0) / split[1]
-        print(f"\n  Named-analyst utterances tied to a single ticker: "
-              f"{split[0]:,}/{split[1]:,} ({pct:.1f}%) "
-              f"— an estimate of management mislabeled as analysts.")
+        print(
+            f"\n  Named-analyst utterances tied to a single ticker: "
+            f"{split[0]:,}/{split[1]:,} ({pct:.1f}%) "
+            f"— an estimate of management mislabeled as analysts."
+        )
 
     print("\n" + RULE)
     print("4. THE 'Other' BUCKET — is it management or leaked analysts?")
@@ -166,12 +168,20 @@ def main() -> int:
         "AND LENGTH(speaker_name) > 60"
     ).fetchone()[0]
     if comp and comp[3]:
-        single, few, many, total = (comp[0] or 0), (comp[1] or 0), (comp[2] or 0), comp[3]
-        p = lambda x: f"{100.0 * x / total:5.1f}%"
+        single, few, many, total = (
+            (comp[0] or 0),
+            (comp[1] or 0),
+            (comp[2] or 0),
+            comp[3],
+        )
+
+        def pct(x):
+            return f"{100.0 * x / total:5.1f}%"
+
         print("\n  Named 'Other' utterances by how many tickers the speaker spans:")
-        print(f"    1 ticker  (management):        {single:>9,}  {p(single)}")
-        print(f"    2-4 tickers (mostly mgmt):     {few:>9,}  {p(few)}")
-        print(f"    >=5 tickers (likely analyst):  {many:>9,}  {p(many)}")
+        print(f"    1 ticker  (management):        {single:>9,}  {pct(single)}")
+        print(f"    2-4 tickers (mostly mgmt):     {few:>9,}  {pct(few)}")
+        print(f"    >=5 tickers (likely analyst):  {many:>9,}  {pct(many)}")
         print(f"    empty speaker label:           {empty:>9,}")
         print(f"    malformed label (>60 chars):   {malformed:>9,}")
 

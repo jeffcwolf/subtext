@@ -242,11 +242,10 @@ h1, h2, h3 { font-weight: 700; line-height: 1.2; }
 .w-pos { color: var(--pos); font-weight: 600; }
 .w-neg { color: var(--neg); font-weight: 600; }
 
-.errbox { white-space: pre-wrap; background: #f5f4f1; padding: 0.75rem; border-radius: 6px; font-family: var(--mono); font-size: 0.8rem; }
-
 /* ---- search results ---- */
 .hit { padding: 0.85rem 0; border-bottom: 1px solid var(--line); }
 .hit .head { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
+.hit .who { font-weight: 600; }
 .hit .snippet { color: #2c2f34; margin-top: 0.25rem; }
 .hit mark { background: #fdf3c7; padding: 0 0.1rem; }
 .filters { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: end; margin-top: 0.5rem; }

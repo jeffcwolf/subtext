@@ -20,8 +20,8 @@ Nothing is written to disk; this step is read-only exploration. Its purpose is
 to make the format concrete and to justify the heuristics used downstream.
 
 Usage:
-    python ingest/explore_data.py
-    SUBTEXT_SAMPLE=5000 python ingest/explore_data.py   # widen the sample
+    python pipeline/explore_data.py
+    SUBTEXT_SAMPLE=5000 python pipeline/explore_data.py   # widen the sample
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def load_transcripts():
         print(
             f"No local copy at {KURRY_DIR}.\n"
             f"Falling back to downloading '{DATASET_ID}' from the Hub.\n"
-            f"(Run `python ingest/download_data.py` to save a local copy.)"
+            f"(Run `python pipeline/download_data.py` to save a local copy.)"
         )
         ds = load_dataset(DATASET_ID)
 
@@ -230,9 +230,7 @@ def main() -> int:
             if tid in transcript_ids:
                 dup_transcript_ids += 1
             transcript_ids.add(tid)
-        y = year_of(
-            {"year": year_col[i], "date": date_col[i]}
-        )
+        y = year_of({"year": year_col[i], "date": date_col[i]})
         if y is not None:
             years[y] += 1
         q = quarter_col[i]
@@ -278,7 +276,7 @@ def main() -> int:
             print(f"  {key}: {value!r}")
 
     sc0 = row0.get("structured_content") or []
-    print(f"\nFirst 8 segments of structured_content:")
+    print("\nFirst 8 segments of structured_content:")
     for idx, seg in enumerate(sc0[:8]):
         speaker = seg_field(seg, "speaker")
         text = seg_field(seg, "text")
@@ -326,7 +324,9 @@ def main() -> int:
                 if len(qa_transition_examples) < 8:
                     m = QA_TRANSITION_RE.search(text)
                     lo, hi = max(0, m.start() - 30), m.end() + 40
-                    qa_transition_examples.append(text[lo:hi].replace("\n", " ").strip())
+                    qa_transition_examples.append(
+                        text[lo:hi].replace("\n", " ").strip()
+                    )
         if found_transition:
             qa_transition_hits += 1
 
@@ -334,9 +334,11 @@ def main() -> int:
         seg_counts_sorted = sorted(seg_counts)
         total_segs = sum(seg_counts)
         mid = seg_counts_sorted[len(seg_counts_sorted) // 2]
-        print(f"Segments per transcript: min={min(seg_counts)}, "
-              f"median={mid}, max={max(seg_counts)}, "
-              f"mean={total_segs / len(seg_counts):.1f}")
+        print(
+            f"Segments per transcript: min={min(seg_counts)}, "
+            f"median={mid}, max={max(seg_counts)}, "
+            f"mean={total_segs / len(seg_counts):.1f}"
+        )
         print(f"Total segments in sample:  {total_segs:,}")
         print(f"Transcripts with empty structured_content: {empty_structured:,}")
         print(f"Distinct speaker labels in sample:         {len(speaker_examples):,}")
@@ -360,8 +362,10 @@ def main() -> int:
 
     header("Q&A SECTION-TRANSITION SURVEY")
     pct = 100.0 * qa_transition_hits / sample_n if sample_n else 0.0
-    print(f"Transcripts with a detectable Q&A transition phrase: "
-          f"{qa_transition_hits:,} / {sample_n:,} ({pct:.1f}%)")
+    print(
+        f"Transcripts with a detectable Q&A transition phrase: "
+        f"{qa_transition_hits:,} / {sample_n:,} ({pct:.1f}%)"
+    )
     print("Example transition snippets:")
     for ex in qa_transition_examples:
         print(f"  ...{ex}...")

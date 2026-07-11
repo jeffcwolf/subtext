@@ -9,6 +9,7 @@ mod home;
 mod lexicon;
 mod search;
 mod sectors;
+mod sql;
 mod transcript;
 mod types;
 
@@ -55,8 +56,10 @@ async fn main() {
     if !std::path::Path::new(&db_path).exists() {
         eprintln!(
             "ERROR: could not find data/subtext.duckdb (searched up from {}).\n\
-             Build it with `./ingest/run_ingest.sh`, or set SUBTEXT_DB to its path.",
-            std::env::current_dir().map(|d| d.display().to_string()).unwrap_or_default()
+             Build it with `./pipeline/run_ingest.sh`, or set SUBTEXT_DB to its path.",
+            std::env::current_dir()
+                .map(|d| d.display().to_string())
+                .unwrap_or_default()
         );
         std::process::exit(1);
     }
@@ -64,9 +67,8 @@ async fn main() {
     let db = Db::new(&db_path);
     match db
         .call(|conn| {
-            let n = |sql: &str| -> anyhow::Result<i64> {
-                Ok(conn.query_row(sql, [], |r| r.get(0))?)
-            };
+            let n =
+                |sql: &str| -> anyhow::Result<i64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
             Ok((
                 n("SELECT COUNT(*) FROM companies")?,
                 n("SELECT COUNT(*) FROM transcripts")?,

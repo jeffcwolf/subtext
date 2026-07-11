@@ -1,5 +1,7 @@
 # Subtext
 
+[![CI](https://github.com/jeffcwolf/subtext/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffcwolf/subtext/actions/workflows/ci.yml)
+
 **Reading between the lines of earnings calls.** Subtext applies NLP to
 earnings-call transcripts — tone shifts, hedging, CEO-vs-CFO divergence, and the
 gap between prepared remarks and Q&A. See [`SPEC.md`](SPEC.md) for the full
@@ -7,11 +9,20 @@ product vision and [`CLAUDE.md`](CLAUDE.md) for the MVP build plan.
 
 Architecture (two phases):
 
-1. **Python ingestion pipeline** (`ingest/`) — processes the HuggingFace
+1. **Python ingestion pipeline** (`pipeline/`) — processes the HuggingFace
    transcript dataset, runs Loughran-McDonald sentiment, and loads everything
    into a DuckDB database.
 2. **Rust web application** (`site/`) — Leptos 0.8 + Axum 0.8 serving the
-   analytical interface, reading from DuckDB. 
+   analytical interface, reading from DuckDB.
+
+## Status
+
+MVP, actively developed. Both phases are complete and green in CI: the pipeline
+ingests the full kurry dataset into DuckDB, and the web app serves the home,
+company, transcript, sector, search, and about routes. It runs locally against a
+locally-built database; it is not yet deployed to a public URL. Phase-2 features
+(a hedging/deflection dictionary, promise tracking, Q&A response-quality scoring,
+and Edgar Explorer cross-referencing) are planned — see [`SPEC.md`](SPEC.md).
 
 ## Phase 1 — Ingestion pipeline
 
@@ -23,21 +34,26 @@ dataset (33,000+ S&P 500 earnings-call transcripts, 2005–2025, speaker-by-spea
 
 | Script | Step | What it does |
 |---|---|---|
-| `ingest/explore_data.py` | 1 | Explore the dataset: schema, counts, date range, `structured_content` shape, speaker-label and Q&A-transition surveys |
-| `ingest/build_schema.py` | 2 | Create the DuckDB tables (companies, transcripts, utterances, sentiment_facts) |
-| `ingest/load_transcripts.py` | 3 | Parse `structured_content`, classify speaker roles and section types, load the tables |
-| `ingest/compute_sentiment.py` | 4 | Loughran-McDonald sentiment per utterance |
-| `ingest/build_indices.py` | 5 | DuckDB FTS (BM25) index over `utterances.text` |
-| `ingest/run_ingest.sh` | 6 | Run steps 2–5 in order (`RUN_EXPLORE=1` also runs step 1) |
+| `pipeline/explore_data.py` | 1 | Explore the dataset: schema, counts, date range, `structured_content` shape, speaker-label and Q&A-transition surveys |
+| `pipeline/build_schema.py` | 2 | Create the DuckDB tables (companies, transcripts, utterances, sentiment_facts) |
+| `pipeline/load_transcripts.py` | 3 | Parse `structured_content`, classify speaker roles and section types, load the tables |
+| `pipeline/compute_sentiment.py` | 4 | Loughran-McDonald sentiment per utterance |
+| `pipeline/build_indices.py` | 5 | DuckDB FTS (BM25) index over `utterances.text` |
+| `pipeline/run_ingest.sh` | 6 | Run steps 2–5 in order (`RUN_EXPLORE=1` also runs step 1) |
 
 ### Setup
 
+The pipeline is a [uv](https://docs.astral.sh/uv/) project under `pipeline/`
+(`pyproject.toml` + `uv.lock` are the single source of truth for dependencies):
+
 ```bash
-# From the repo root
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -r ingest/requirements.txt
+cd pipeline
+uv sync            # create pipeline/.venv and install the locked dependencies
 ```
+
+`uv run …` (used below) runs inside that environment automatically. If you'd
+rather not use uv, `pip install -r pipeline/requirements.txt` into a Python 3.11
+virtualenv works too.
 
 ### Data prerequisites
 
@@ -45,7 +61,7 @@ Both live under `./data/` (gitignored):
 
 1. **Transcripts** — save the dataset to `./data/kurry_transcripts/`:
    ```bash
-   python ingest/download_data.py     # needs access to huggingface.co
+   uv run python download_data.py     # from pipeline/; needs huggingface.co
    ```
    If your environment blocks HuggingFace, run this where it's reachable and
    copy the resulting `data/kurry_transcripts/` directory into place.
@@ -58,8 +74,8 @@ Both live under `./data/` (gitignored):
 ### Run
 
 ```bash
-./ingest/run_ingest.sh          # build the DuckDB database
-RUN_EXPLORE=1 ./ingest/run_ingest.sh   # also print the Step 1 exploration
+./pipeline/run_ingest.sh          # build the DuckDB database
+RUN_EXPLORE=1 ./pipeline/run_ingest.sh   # also print the Step 1 exploration
 ```
 
 ### Speaker & section classification
@@ -82,7 +98,7 @@ In this dataset the speaker labels are **bare names** with no titles
 
 These heuristics were tuned against the real dataset. The load prints a
 **classification-health** summary (share of transcripts with a detected Q&A
-boundary and an identified CEO/CFO); `ingest/explore_data.py`'s speaker-label
+boundary and an identified CEO/CFO); `pipeline/explore_data.py`'s speaker-label
 and Q&A-transition surveys show where any remaining tuning is needed.
 
 The dataset has no `transcript_id`, so one is synthesized from

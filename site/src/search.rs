@@ -41,7 +41,7 @@ async fn search(db: &Db, p: &SearchParams) -> anyhow::Result<Vec<SearchHit>> {
     db.call_fts(move |conn| {
         let mut sql = String::from(
             "SELECT u.transcript_id, t.ticker, c.name, CAST(t.call_date AS VARCHAR),
-                    u.speaker_name, u.speaker_role, u.section, u.text, sub.score
+                    u.speaker_name, u.speaker_role, u.section, u.text
              FROM (
                  SELECT utterance_id,
                         fts_main_utterances.match_bm25(utterance_id, ?) AS score
@@ -75,10 +75,11 @@ async fn search(db: &Db, p: &SearchParams) -> anyhow::Result<Vec<SearchHit>> {
                 company_name: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 call_date: r.get(3)?,
                 speaker_name: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                speaker_role: r.get::<_, Option<String>>(5)?.unwrap_or_else(|| "Other".into()),
+                speaker_role: r
+                    .get::<_, Option<String>>(5)?
+                    .unwrap_or_else(|| "Other".into()),
                 section: r.get(6)?,
                 snippet: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
-                score: r.get(8)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -98,7 +99,9 @@ fn option_tag(value: &str, label: &str, selected: &str) -> String {
 
 fn render(p: &SearchParams, result: anyhow::Result<Vec<SearchHit>>, empty_query: bool) -> String {
     // Filter controls (raw HTML so we can pre-select from the query string).
-    let roles = ["", "CEO", "CFO", "COO", "IR", "Analyst", "Operator", "Other"];
+    let roles = [
+        "", "CEO", "CFO", "COO", "IR", "Analyst", "Operator", "Other",
+    ];
     let role_opts: String = roles
         .iter()
         .map(|r| option_tag(r, if r.is_empty() { "Any role" } else { r }, &p.role))
@@ -133,26 +136,23 @@ fn render(p: &SearchParams, result: anyhow::Result<Vec<SearchHit>>, empty_query:
         sections = section_opts,
     );
 
-    let tokens: Vec<String> = p
-        .q
-        .split_whitespace()
-        .map(|t| t.to_lowercase())
-        .filter(|t| t.len() >= 2)
-        .collect();
+    let tokens: Vec<String> =
+        p.q.split_whitespace()
+            .map(|t| t.to_lowercase())
+            .filter(|t| t.len() >= 2)
+            .collect();
 
     let results_html = if empty_query {
         r#"<p class="muted">Enter a query above to search every utterance by BM25 relevance.</p>"#
             .to_string()
     } else {
         match result {
-            Err(e) => format!(
-                r#"<p class="muted">Search is unavailable — the DuckDB full-text index isn't loaded.</p>
-<pre class="errbox">{}</pre>"#,
-                app::escape(&e.to_string())
-            ),
-            Ok(hits) if hits.is_empty() => {
-                r#"<p class="muted">No matches.</p>"#.to_string()
+            Err(e) => {
+                eprintln!("search error: {e:#}");
+                r#"<p class="muted">Search is unavailable — the DuckDB full-text index isn't loaded.</p>"#
+                    .to_string()
             }
+            Ok(hits) if hits.is_empty() => r#"<p class="muted">No matches.</p>"#.to_string(),
             Ok(hits) => {
                 let mut out = format!(r#"<p class="muted">{} results.</p>"#, hits.len());
                 for h in &hits {
@@ -166,6 +166,7 @@ fn render(p: &SearchParams, result: anyhow::Result<Vec<SearchHit>>, empty_query:
     <span class="muted">{name}</span>
     <span class="mono muted">{date}</span>
     <span class="badge {badge}">{role}</span>
+    <span class="who">{speaker}</span>
     <span class="section-tag">{section}</span>
     <a href="{href}">open →</a>
   </div>
@@ -176,6 +177,7 @@ fn render(p: &SearchParams, result: anyhow::Result<Vec<SearchHit>>, empty_query:
                         date = app::escape(&date),
                         badge = badge,
                         role = app::escape(&h.speaker_role),
+                        speaker = app::escape(&h.speaker_name),
                         section = app::escape(app::section_label(&h.section)),
                         href = app::escape(&href),
                         snippet = snippet_html(&h.snippet, &tokens),
@@ -218,7 +220,9 @@ fn snippet_html(text: &str, tokens: &[String]) -> String {
     };
 
     // Find the first match to centre the window on.
-    let first = (0..chars.len()).find(|&i| matches_at(i).is_some()).unwrap_or(0);
+    let first = (0..chars.len())
+        .find(|&i| matches_at(i).is_some())
+        .unwrap_or(0);
     let start = first.saturating_sub(55);
     let end = (first + 200).min(chars.len());
 
@@ -243,4 +247,33 @@ fn snippet_html(text: &str, tokens: &[String]) -> String {
         out.push('…');
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snippet_highlights_matching_tokens() {
+        let out = snippet_html("Revenue grew strongly", &["revenue".to_string()]);
+        assert!(out.contains("<mark>Revenue</mark>"), "got: {out}");
+        assert!(out.contains("grew strongly"));
+    }
+
+    #[test]
+    fn snippet_escapes_html_in_both_matches_and_surrounding_text() {
+        let out = snippet_html("a <b> tag & more", &["tag".to_string()]);
+        assert!(out.contains("&lt;b&gt;"), "angle brackets escaped: {out}");
+        assert!(out.contains("&amp;"), "ampersand escaped: {out}");
+        assert!(out.contains("<mark>tag</mark>"));
+        // No raw markup leaks through.
+        assert!(!out.contains("<b>"));
+    }
+
+    #[test]
+    fn snippet_with_no_tokens_returns_escaped_plain_text() {
+        let out = snippet_html("plain <text> here", &[]);
+        assert_eq!(out, "plain &lt;text&gt; here");
+        assert!(!out.contains("<mark>"));
+    }
 }

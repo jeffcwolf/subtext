@@ -1,0 +1,35 @@
+[project]
+name = "subtext-pipeline"
+version = "0.1.0"
+description = "Subtext ingestion pipeline: HuggingFace earnings-call transcripts → Loughran-McDonald sentiment → DuckDB."
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Jeffrey C. Wolf" }]
+dependencies = [
+    "datasets>=5.0.0",
+    "duckdb>=1.5.4",
+]
+
+[project.urls]
+Repository = "https://github.com/jeffcwolf/subtext"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+# The pipeline is a set of runnable scripts, not an installable package, so uv
+# should provision only the dependencies — not try to build a wheel from a
+# package layout that doesn't exist.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The pipeline scripts are top-level modules in this directory; put it on the
+# path so tests can `import load_transcripts` etc. without a package layout.
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88

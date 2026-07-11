@@ -15,7 +15,7 @@ We deliberately ignore glopardo's own transcript text — it is a single
 unsegmented blob; kurry's speaker-segmented content is what the app analyses.
 
 Usage:
-    python ingest/load_glopardo.py        # or: uv run python ...
+    python pipeline/load_glopardo.py        # or: uv run python ...
 """
 
 from __future__ import annotations
@@ -63,8 +63,10 @@ def load_glopardo():
     if isinstance(ds, DatasetDict):
         from datasets import concatenate_datasets
 
-        ds = ds[next(iter(ds))] if len(ds) == 1 else concatenate_datasets(
-            list(ds.values())
+        ds = (
+            ds[next(iter(ds))]
+            if len(ds) == 1
+            else concatenate_datasets(list(ds.values()))
         )
     assert isinstance(ds, Dataset)
     # Drop the large transcript blob; we only need the metadata + financials.
@@ -112,8 +114,11 @@ def main() -> int:
             continue
         if t not in meta:
             cik = ciks[i]
-            meta[t] = (sectors[i], industries[i],
-                       str(int(cik)) if cik is not None else None)
+            meta[t] = (
+                sectors[i],
+                industries[i],
+                str(int(cik)) if cik is not None else None,
+            )
         d = parse_date(edates[i])
         if d is not None:
             by_ticker.setdefault(t, []).append((d, eps_ttm[i], eps_fwd[i], pe_fwd[i]))
@@ -177,8 +182,10 @@ def main() -> int:
     pct = 100.0 * len(fin_rows) / total_tr if total_tr else 0.0
     print(f"\nCompanies enriched with sector/industry/CIK: {enriched:,}/{total_co:,}")
     print(f"Glopardo tickers: {len(by_ticker):,}")
-    print(f"Transcripts matched to financials: {len(fin_rows):,}/{total_tr:,} "
-          f"({pct:.1f}%)")
+    print(
+        f"Transcripts matched to financials: {len(fin_rows):,}/{total_tr:,} "
+        f"({pct:.1f}%)"
+    )
     print(f"  (transcripts whose ticker isn't in glopardo: {no_ticker:,})")
     print("Glopardo load complete.")
     return 0
