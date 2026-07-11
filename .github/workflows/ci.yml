@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  # Run on pushes to the default branch and on every pull request. This avoids
+  # the double run you get from `on: [push, pull_request]` for PR branches.
+  # Widen `branches` if you want CI on other branch pushes too.
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref instead of queueing them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      # Doc-correctness gate: fails on broken intra-doc links and bad doctests.
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+      # Library crates: to also require a doc comment on *every* public item,
+      # replace the line above with:
+      #   RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --no-deps --workspace
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The uv project lives in pipeline/, not the repo root.
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
