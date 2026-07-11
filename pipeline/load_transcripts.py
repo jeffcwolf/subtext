@@ -22,8 +22,8 @@ Section (prepared_remarks / qa_question / qa_response / operator / other):
   prepared_remarks; management at/after -> qa_response.
 
 Usage:
-    python ingest/load_transcripts.py
-    SUBTEXT_LIMIT=500 python ingest/load_transcripts.py   # load a subset
+    python pipeline/load_transcripts.py
+    SUBTEXT_LIMIT=500 python pipeline/load_transcripts.py   # load a subset
 """
 
 from __future__ import annotations
@@ -212,7 +212,7 @@ def role_from_own_label(label: str) -> str | None:
     m = re.search(r"[,\-–—]", label)
     if not m:
         return None
-    cm = CHIEF_TITLE_RE.search(label[m.end():])
+    cm = CHIEF_TITLE_RE.search(label[m.end() :])
     return cm.lastgroup if cm else None
 
 
@@ -237,15 +237,15 @@ def _role_for_name(name: str, intro_text: str) -> str | None:
         )
 
     for start, end in positions:
-        bm = TITLE_BEFORE_RE.search(intro_text[max(0, start - 45):start])
+        bm = TITLE_BEFORE_RE.search(intro_text[max(0, start - 45) : start])
         if bm:
             cm = CHIEF_TITLE_RE.search(bm.group(1))
             if cm:
                 return cm.lastgroup
-        role = _title_clause_role(intro_text[end:end + 120])
+        role = _title_clause_role(intro_text[end : end + 120])
         if role:
             return role
-        cm = CHIEF_TITLE_RE.search(intro_text[max(0, start - 25):start])
+        cm = CHIEF_TITLE_RE.search(intro_text[max(0, start - 25) : start])
         if cm:
             return cm.lastgroup
     return None
@@ -288,21 +288,21 @@ def classify_transcript(segments, qa_start=None):
         label = (seg.get("speaker") or "").strip()
         text = seg.get("text") or ""
         if is_nonspeaker(label):
-            continue                # roster header / sponsor boilerplate / junk
+            continue  # roster header / sponsor boilerplate / junk
         in_qa = i >= qa_start
 
         if OPERATOR_LABEL_RE.match(label):
             role = "Operator"
         elif len(label) > 60:
-            role = "Other"          # malformed label (text leaked into speaker)
+            role = "Other"  # malformed label (text leaked into speaker)
         elif ANALYST_LABEL_RE.search(label):
-            role = "Analyst"        # e.g. "Unidentified Analyst"
+            role = "Analyst"  # e.g. "Unidentified Analyst"
         elif role_from_own_label(label):
             role = role_from_own_label(label)  # title stated in the label itself
         elif label in role_map:
             role = role_map[label]  # management, identified from the intro titles
         elif person_name(label) in analyst_full or _surname(label) in analyst_surnames:
-            role = "Analyst"        # named by the operator when handing off Q&A
+            role = "Analyst"  # named by the operator when handing off Q&A
         else:
             # Unknown speaker. In the Q&A the analysts are the ones the operator
             # announced (handled above), so an unannounced voice is management
@@ -352,7 +352,7 @@ def load_dataset_local():
     if not KURRY_DIR.exists():
         print(
             f"ERROR: no dataset at {KURRY_DIR}.\n"
-            "Run `python ingest/download_data.py` (needs HuggingFace access) "
+            "Run `python pipeline/download_data.py` (needs HuggingFace access) "
             "or copy the saved dataset into place first.",
             file=sys.stderr,
         )
@@ -379,8 +379,10 @@ def main() -> int:
     if isinstance(ds, DatasetDict):
         from datasets import concatenate_datasets
 
-        ds = ds[next(iter(ds))] if len(ds) == 1 else concatenate_datasets(
-            list(ds.values())
+        ds = (
+            ds[next(iter(ds))]
+            if len(ds) == 1
+            else concatenate_datasets(list(ds.values()))
         )
     assert isinstance(ds, Dataset)
 
@@ -431,9 +433,7 @@ def main() -> int:
                 " speaker_name VARCHAR, speaker_role VARCHAR, "
                 " sequence_order INTEGER, text VARCHAR, word_count INTEGER)"
             )
-            con.executemany(
-                "INSERT INTO _u VALUES (?,?,?,?,?,?,?,?)", utterance_rows
-            )
+            con.executemany("INSERT INTO _u VALUES (?,?,?,?,?,?,?,?)", utterance_rows)
             con.execute("INSERT INTO utterances SELECT * FROM _u")
             utterance_rows = []
 
@@ -442,7 +442,9 @@ def main() -> int:
         if LIMIT and i >= LIMIT:
             break
         sym = (row.get("symbol") or "").strip() if row.get("symbol") else ""
-        name = (row.get("company_name") or "").strip() if row.get("company_name") else ""
+        name = (
+            (row.get("company_name") or "").strip() if row.get("company_name") else ""
+        )
         year = row.get("year")
         quarter = normalize_quarter(row.get("quarter"))
         tid = row.get("transcript_id")
@@ -463,8 +465,13 @@ def main() -> int:
         if sym:
             companies.setdefault(sym, name)
         transcript_rows.append(
-            (tid, sym or None, to_iso_date(row.get("date")), quarter,
-             str(year) if year not in (None, "") else None)
+            (
+                tid,
+                sym or None,
+                to_iso_date(row.get("date")),
+                quarter,
+                str(year) if year not in (None, "") else None,
+            )
         )
 
         segments = row.get("structured_content") or []
@@ -491,19 +498,14 @@ def main() -> int:
 
         if (i + 1) % BATCH_TRANSCRIPTS == 0:
             flush()
-            print(f"  ...{i + 1:,}/{n:,} transcripts "
-                  f"({total_utterances:,} utterances)")
+            print(f"  ...{i + 1:,}/{n:,} transcripts ({total_utterances:,} utterances)")
 
     flush()
 
     # Companies last (small; deduped by ticker).
     if companies:
-        con.execute(
-            "CREATE OR REPLACE TEMP TABLE _c (ticker VARCHAR, name VARCHAR)"
-        )
-        con.executemany(
-            "INSERT INTO _c VALUES (?,?)", list(companies.items())
-        )
+        con.execute("CREATE OR REPLACE TEMP TABLE _c (ticker VARCHAR, name VARCHAR)")
+        con.executemany("INSERT INTO _c VALUES (?,?)", list(companies.items()))
         con.execute("INSERT INTO companies (ticker, name) SELECT ticker, name FROM _c")
 
     # Report.
@@ -512,8 +514,7 @@ def main() -> int:
     n_ut = con.execute("SELECT COUNT(*) FROM utterances").fetchone()[0]
     con.close()
 
-    print(f"\nLoaded: {n_co:,} companies, {n_tr:,} transcripts, "
-          f"{n_ut:,} utterances")
+    print(f"\nLoaded: {n_co:,} companies, {n_tr:,} transcripts, {n_ut:,} utterances")
     print("\nUtterances by section:")
     for section, count in section_counts.most_common():
         print(f"  {section:<16} {count:>9,}")
@@ -525,9 +526,11 @@ def main() -> int:
     # have a detected Q&A boundary and an identified CEO and CFO. Low numbers
     # here mean the intro-parsing / Q&A-start heuristics need tuning.
     if n_nonempty:
-        pct = lambda x: f"{100.0 * x / n_nonempty:5.1f}%"
-        print("\nClassification health (of "
-              f"{n_nonempty:,} non-empty transcripts):")
+
+        def pct(x):
+            return f"{100.0 * x / n_nonempty:5.1f}%"
+
+        print(f"\nClassification health (of {n_nonempty:,} non-empty transcripts):")
         print(f"  Q&A boundary detected: {pct(n_qa_detected)} ({n_qa_detected:,})")
         print(f"  CEO identified:        {pct(n_with_ceo)} ({n_with_ceo:,})")
         print(f"  CFO identified:        {pct(n_with_cfo)} ({n_with_cfo:,})")

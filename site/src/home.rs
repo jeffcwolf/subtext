@@ -1,6 +1,9 @@
 //! `/` — description, search box, and the most-covered companies.
 
-use axum::{extract::State, response::{Html, IntoResponse, Response}};
+use axum::{
+    extract::State,
+    response::{Html, IntoResponse, Response},
+};
 use leptos::prelude::*;
 
 use crate::app;

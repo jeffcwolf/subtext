@@ -12,7 +12,6 @@ pub struct CompanyHeader {
     pub ticker: String,
     pub name: String,
     pub sector: Option<String>,
-    pub industry: Option<String>,
     pub transcripts: i64,
     pub first_date: Option<String>,
     pub last_date: Option<String>,
@@ -22,8 +21,6 @@ pub struct CompanyHeader {
 #[derive(Clone, Debug)]
 pub struct CallPoint {
     pub transcript_id: String,
-    pub fiscal_year: Option<i32>,
-    pub fiscal_quarter: Option<String>,
     pub call_date: Option<String>,
     /// Label like "2021 Q3".
     pub label: String,
@@ -32,18 +29,9 @@ pub struct CallPoint {
     pub cfo: Option<f64>,
     pub prepared: Option<f64>,
     pub qa: Option<f64>,
-    // glopardo financials matched to this call (may be absent).
-    pub eps_ttm: Option<f64>,
+    // glopardo forward figures matched to this call (may be absent).
     pub eps_fwd: Option<f64>,
     pub pe_fwd: Option<f64>,
-}
-
-#[derive(Clone, Debug)]
-pub struct RecentTranscript {
-    pub transcript_id: String,
-    pub call_date: Option<String>,
-    pub label: String,
-    pub overall: Option<f64>,
 }
 
 /// A single utterance rendered on the transcript page.
@@ -61,7 +49,6 @@ pub struct Utterance {
 
 #[derive(Clone, Debug)]
 pub struct TranscriptMeta {
-    pub transcript_id: String,
     pub ticker: String,
     pub company_name: String,
     pub call_date: Option<String>,
@@ -100,5 +87,4 @@ pub struct SearchHit {
     pub speaker_role: String,
     pub section: String,
     pub snippet: String,
-    pub score: f64,
 }

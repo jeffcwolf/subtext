@@ -10,7 +10,7 @@ script prints how to install it offline and exits non-zero so the failure is
 visible, without corrupting the rest of the database.
 
 Usage:
-    python ingest/build_indices.py
+    python pipeline/build_indices.py
 """
 
 from __future__ import annotations

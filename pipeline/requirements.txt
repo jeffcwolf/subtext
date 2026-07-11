@@ -1,0 +1,10 @@
+# Dependencies are managed with uv in pyproject.toml + uv.lock (the single
+# source of truth). This file is only a convenience for pip-based setups.
+#
+# Preferred (reproducible, includes the pinned lockfile and dev tools):
+#     uv sync
+#
+# Plain pip, if you don't use uv:
+#     pip install -r requirements.txt
+datasets>=5.0.0
+duckdb>=1.5.4

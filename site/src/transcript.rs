@@ -25,13 +25,10 @@ pub async fn handler(State(db): State<Db>, Path(id): Path<String>) -> Response {
     }
 }
 
-async fn load(
-    db: &Db,
-    id: String,
-) -> anyhow::Result<Option<(TranscriptMeta, Vec<Utterance>)>> {
+async fn load(db: &Db, id: String) -> anyhow::Result<Option<(TranscriptMeta, Vec<Utterance>)>> {
     db.call(move |conn| {
         let mut ms = conn.prepare(
-            "SELECT t.transcript_id, t.ticker, c.name, c.sector,
+            "SELECT t.ticker, c.name, c.sector,
                     CAST(t.call_date AS VARCHAR), t.fiscal_year, t.fiscal_quarter,
                     (SUM(s.positive_count) - SUM(s.negative_count))::DOUBLE
                         / NULLIF(SUM(s.total_words), 0),
@@ -47,25 +44,24 @@ async fn load(
                       t.fiscal_year, t.fiscal_quarter",
         )?;
         let mut mrows = ms.query_map(params![id], |r| {
-            let year: Option<i32> = r.get(5)?;
-            let quarter: Option<String> = r.get(6)?;
+            let year: Option<i32> = r.get(4)?;
+            let quarter: Option<String> = r.get(5)?;
             let label = match (year, quarter.as_deref()) {
                 (Some(y), Some(q)) => format!("{y} {q}"),
                 (Some(y), None) => y.to_string(),
                 _ => "—".to_string(),
             };
             Ok(TranscriptMeta {
-                transcript_id: r.get(0)?,
-                ticker: r.get(1)?,
-                company_name: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                sector: r.get(3)?,
-                call_date: r.get(4)?,
+                ticker: r.get(0)?,
+                company_name: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                sector: r.get(2)?,
+                call_date: r.get(3)?,
                 label,
-                overall: r.get(7)?,
-                total_words: r.get(8)?,
-                eps_ttm: r.get(9)?,
-                eps_fwd: r.get(10)?,
-                pe_fwd: r.get(11)?,
+                overall: r.get(6)?,
+                total_words: r.get(7)?,
+                eps_ttm: r.get(8)?,
+                eps_fwd: r.get(9)?,
+                pe_fwd: r.get(10)?,
             })
         })?;
         let meta = match mrows.next() {
@@ -88,7 +84,9 @@ async fn load(
             Ok(Utterance {
                 section: r.get(0)?,
                 speaker_name: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                speaker_role: r.get::<_, Option<String>>(2)?.unwrap_or_else(|| "Other".into()),
+                speaker_role: r
+                    .get::<_, Option<String>>(2)?
+                    .unwrap_or_else(|| "Other".into()),
                 text: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
                 positive: r.get(4)?,
                 negative: r.get(5)?,
@@ -109,9 +107,7 @@ fn render(meta: TranscriptMeta, utterances: Vec<Utterance>) -> String {
     for u in &utterances {
         *by_role.entry(u.speaker_role.clone()).or_insert(0) += u.word_count;
     }
-    let role_stat = |role: &str| -> String {
-        by_role.get(role).copied().unwrap_or(0).to_string()
-    };
+    let role_stat = |role: &str| -> String { by_role.get(role).copied().unwrap_or(0).to_string() };
 
     let company_href = format!("/company/{}", meta.ticker);
     let overall_pill = format!("pill {}", app::sentiment_class(meta.overall));
@@ -132,7 +128,9 @@ fn render(meta: TranscriptMeta, utterances: Vec<Utterance>) -> String {
   <div class="stat"><span class="k">Forward P/E</span><span class="v mono">{pe}</span></div>
   <div class="stat"><span class="k">Source</span><span class="v muted">glopardo</span></div>
 </div>"#,
-            ttm = eps_ttm, fwd = eps_fwd, pe = pe_fwd
+            ttm = eps_ttm,
+            fwd = eps_fwd,
+            pe = pe_fwd
         )
     } else {
         String::new()

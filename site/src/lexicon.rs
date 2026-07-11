@@ -20,7 +20,10 @@ pub struct Lexicon {
 
 impl Lexicon {
     fn empty() -> Self {
-        Self { positive: HashSet::new(), negative: HashSet::new() }
+        Self {
+            positive: HashSet::new(),
+            negative: HashSet::new(),
+        }
     }
     pub fn is_empty(&self) -> bool {
         self.positive.is_empty() && self.negative.is_empty()
@@ -43,9 +46,8 @@ pub async fn load(db: &Db, db_path: &str) -> Lexicon {
             let mut pos = HashSet::new();
             let mut neg = HashSet::new();
             let mut stmt = conn.prepare("SELECT word, category FROM lm_words")?;
-            let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            })?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
             for row in rows {
                 let (w, c) = row?;
                 match c.as_str() {
@@ -58,7 +60,10 @@ pub async fn load(db: &Db, db_path: &str) -> Lexicon {
                     _ => {}
                 }
             }
-            Ok(Lexicon { positive: pos, negative: neg })
+            Ok(Lexicon {
+                positive: pos,
+                negative: neg,
+            })
         })
         .await
     {

@@ -135,8 +135,10 @@ fn render_detail(sector: &str, companies: Vec<SectorCompany>) -> String {
     let callout = match (most_upbeat, most_cautious) {
         (Some(u), Some(d)) if u.ticker != d.ticker => format!(
             r#"<p>Most upbeat: <a href="/company/{ut}"><strong>{ut}</strong></a> ({uv}). Most cautious: <a href="/company/{dt}"><strong>{dt}</strong></a> ({dv}).</p>"#,
-            ut = app::escape(&u.ticker), uv = app::fmt_sentiment(u.avg_sentiment),
-            dt = app::escape(&d.ticker), dv = app::fmt_sentiment(d.avg_sentiment),
+            ut = app::escape(&u.ticker),
+            uv = app::fmt_sentiment(u.avg_sentiment),
+            dt = app::escape(&d.ticker),
+            dv = app::fmt_sentiment(d.avg_sentiment),
         ),
         _ => String::new(),
     };
@@ -169,6 +171,7 @@ fn render_detail(sector: &str, companies: Vec<SectorCompany>) -> String {
         })
         .collect();
 
+    let mpill = format!("pill {}", app::sentiment_class(Some(mean)));
     format!(
         r#"<section class="card">
   <p class="muted"><a href="/sectors">← All sectors</a></p>
@@ -191,7 +194,7 @@ fn render_detail(sector: &str, companies: Vec<SectorCompany>) -> String {
         sector = app::escape(sector),
         n = n_companies,
         tt = total_transcripts,
-        mpill = format!("pill {}", app::sentiment_class(Some(mean))),
+        mpill = mpill,
         mean = app::fmt_sentiment(Some(mean)),
         callout = callout,
         rows = rows,

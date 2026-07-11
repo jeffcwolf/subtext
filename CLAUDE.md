@@ -21,7 +21,7 @@ Two HuggingFace datasets are already downloaded to `./data/`:
 
 For the MVP, use **kurry only**. We'll integrate glopardo's financial metrics later.
 
-## Phase 1: Python Ingestion Pipeline (`ingest/`)
+## Phase 1: Python Ingestion Pipeline (`pipeline/`)
 
 Write a Python pipeline that:
 
@@ -88,7 +88,7 @@ CREATE TABLE sentiment_facts (
 - Create a DuckDB FTS index on utterances.text for BM25 search
 
 ### Step 6: Run script
-- Create `ingest/run_ingest.sh` that runs the full pipeline
+- Create `pipeline/run_ingest.sh` that runs the full pipeline
 - All intermediate steps should print progress
 
 ## Phase 2: Rust Web Application (`site/`)
@@ -164,7 +164,7 @@ A Leptos 0.8 + Axum 0.8 web app. Same pattern as Edgar Explorer: server-side ren
 
 ```
 subtext/
-├── ingest/
+├── pipeline/
 │   ├── explore_data.py          # Step 1: explore dataset structure
 │   ├── build_schema.py          # Step 2: create DuckDB schema
 │   ├── load_transcripts.py      # Step 3: parse, classify, load
