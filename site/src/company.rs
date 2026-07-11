@@ -229,19 +229,19 @@ fn render(header: CompanyHeader, calls: Vec<CallPoint>) -> String {
 /// A quarter where management tone moved opposite to the forward EPS estimate.
 struct Divergence {
     label: String,
-    ds: f64, // change in overall sentiment vs prior call
-    de: f64, // change in forward EPS estimate vs prior call
+    tone_delta: f64,
+    eps_delta: f64,
     note: &'static str,
 }
 
 impl Divergence {
     fn to_html(&self) -> String {
-        let (sa, sc) = if self.ds > 0.0 {
+        let (sa, sc) = if self.tone_delta > 0.0 {
             ("↑", "up")
         } else {
             ("↓", "down")
         };
-        let (ea, ec) = if self.de > 0.0 {
+        let (ea, ec) = if self.eps_delta > 0.0 {
             ("↑", "up")
         } else {
             ("↓", "down")
@@ -254,10 +254,10 @@ impl Divergence {
             lbl = app::escape(&self.label),
             sc = sc,
             sa = sa,
-            sv = self.ds * 1000.0,
+            sv = self.tone_delta * 1000.0,
             ec = ec,
             ea = ea,
-            ev = self.de,
+            ev = self.eps_delta,
             note = self.note,
         )
     }
@@ -268,26 +268,29 @@ impl Divergence {
 fn compute_divergences(calls: &[CallPoint]) -> Vec<Divergence> {
     let mut out = Vec::new();
     for w in calls.windows(2) {
-        let (a, b) = (&w[0], &w[1]);
-        if let (Some(s0), Some(s1), Some(e0), Some(e1)) =
-            (a.overall, b.overall, a.eps_fwd, b.eps_fwd)
+        let (prev, curr) = (&w[0], &w[1]);
+        if let (Some(prev_tone), Some(tone), Some(prev_eps), Some(eps)) =
+            (prev.overall, curr.overall, prev.eps_fwd, curr.eps_fwd)
         {
-            if e0.abs() < 1e-9 {
+            if prev_eps.abs() < 1e-9 {
                 continue;
             }
-            let ds = s1 - s0;
-            let de = e1 - e0;
-            let rel_de = de / e0.abs();
-            if ds.abs() >= 0.002 && rel_de.abs() >= 0.01 && (ds > 0.0) != (de > 0.0) {
-                let note = if ds > 0.0 {
+            let tone_delta = tone - prev_tone;
+            let eps_delta = eps - prev_eps;
+            let rel_eps_delta = eps_delta / prev_eps.abs();
+            if tone_delta.abs() >= 0.002
+                && rel_eps_delta.abs() >= 0.01
+                && (tone_delta > 0.0) != (eps_delta > 0.0)
+            {
+                let note = if tone_delta > 0.0 {
                     "Tone rose while the forward EPS estimate was cut."
                 } else {
                     "Tone cooled even as the forward EPS estimate rose."
                 };
                 out.push(Divergence {
-                    label: b.label.clone(),
-                    ds,
-                    de,
+                    label: curr.label.clone(),
+                    tone_delta,
+                    eps_delta,
                     note,
                 });
             }

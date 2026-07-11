@@ -175,13 +175,13 @@ def main() -> int:
             comp[3],
         )
 
-        def p(x):
+        def pct(x):
             return f"{100.0 * x / total:5.1f}%"
 
         print("\n  Named 'Other' utterances by how many tickers the speaker spans:")
-        print(f"    1 ticker  (management):        {single:>9,}  {p(single)}")
-        print(f"    2-4 tickers (mostly mgmt):     {few:>9,}  {p(few)}")
-        print(f"    >=5 tickers (likely analyst):  {many:>9,}  {p(many)}")
+        print(f"    1 ticker  (management):        {single:>9,}  {pct(single)}")
+        print(f"    2-4 tickers (mostly mgmt):     {few:>9,}  {pct(few)}")
+        print(f"    >=5 tickers (likely analyst):  {many:>9,}  {pct(many)}")
         print(f"    empty speaker label:           {empty:>9,}")
         print(f"    malformed label (>60 chars):   {malformed:>9,}")
 
