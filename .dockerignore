@@ -14,9 +14,8 @@ pipeline
 **/.venv
 *.md
 
-# ─── data/: ship ONLY the built store (+ optional LM dictionary CSV) ──
-# This drops the multi-GB raw HuggingFace dataset directories and any WAL
-# sidecar, which would otherwise bloat the build context and the image.
-data/*
-!data/subtext.duckdb
-!data/*.csv
+# ─── data/: excluded entirely ────────────────────────────────────────
+# The DuckDB store is bind-mounted read-only from the host at runtime (not baked
+# into the image), so nothing from data/ belongs in the build context. Keeping
+# the ~3.5 GB DB out of the context also makes the build far faster.
+data

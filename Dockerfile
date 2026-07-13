@@ -46,19 +46,18 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /build/target/release/subtext /usr/local/bin/subtext
 
-# Bake the analytical store (built by pipeline/run_ingest.sh) plus, if present,
-# the Loughran-McDonald dictionary CSV that sits beside it (used for inline word
-# highlighting; the app degrades gracefully without it). .dockerignore prunes
-# data/ to just those files, so the raw HuggingFace datasets never enter the
-# image. The app opens the DB read-only, so it's fine on the read-only layer.
-COPY data/ /app/data/
-RUN chown -R app:app /app/data
+# The analytical store (~3.5 GB) is NOT baked into the image — that would make a
+# ~3.6 GB image and needs ~7 GB transiently on the server to pull+extract, which
+# overruns a small VM's disk. Instead it's bind-mounted read-only from the host
+# at /data (see the compose block: `- /home/wolf/data/subtext:/data:ro`).
+# deploy.sh rsyncs the DB there. The app opens it read-only (AccessMode::
+# ReadOnly), so a :ro mount is correct. A Loughran-McDonald dictionary CSV placed
+# beside the DB on the host is picked up for inline highlighting (optional).
 
 # Bind 0.0.0.0 (NOT loopback) so the separate Caddy container can reach us —
-# a 127.0.0.1 bind would give 502s. SUBTEXT_DB points at the baked store so no
-# host mount is needed.
+# a 127.0.0.1 bind would give 502s. SUBTEXT_DB points at the mounted store.
 ENV SUBTEXT_ADDR=0.0.0.0:3000 \
-    SUBTEXT_DB=/app/data/subtext.duckdb
+    SUBTEXT_DB=/data/subtext.duckdb
 
 USER app
 EXPOSE 3000

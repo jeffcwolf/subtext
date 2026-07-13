@@ -15,8 +15,10 @@
 #   DEPLOY_IMAGE      $REGISTRY/$NAMESPACE/subtext   full image (overrides the two above)
 #   DEPLOY_TAG        latest                    the moving tag (also always tags :<git-sha>)
 #   DEPLOY_STACK_DIR  /home/wolf/stack          remote compose stack dir
+#   DEPLOY_DATA_DIR   /home/wolf/data/subtext   remote dir the DB is rsynced to (mounted :ro)
 #   DEPLOY_BUILDER    discrepancies             buildx builder name
 #   DEPLOY_BUILD_JOBS 2                         cap C++ build parallelism (lower=less RAM)
+#   DEPLOY_SKIP_DB_SYNC unset                   set=1 to skip the DB rsync (code-only deploy)
 #   DEPLOY_ALLOW_DIRTY unset                    set=1 to skip the clean-tree check
 
 set -euo pipefail
@@ -36,6 +38,7 @@ NAMESPACE="${DEPLOY_NAMESPACE:-discrepancies}"
 IMAGE="${DEPLOY_IMAGE:-$REGISTRY/$NAMESPACE/$APP}"
 TAG="${DEPLOY_TAG:-latest}"
 STACK_DIR="${DEPLOY_STACK_DIR:-/home/wolf/stack}"
+DATA_DIR="${DEPLOY_DATA_DIR:-/home/wolf/data/$APP}"   # remote dir bind-mounted read-only at /data
 BUILDER="${DEPLOY_BUILDER:-discrepancies}"
 PLATFORM="linux/amd64"                                # server is amd64; laptop may be arm64
 BUILD_JOBS="${DEPLOY_BUILD_JOBS:-2}"                  # cap C++ compile parallelism (memory)
@@ -58,10 +61,11 @@ if [ -z "${DEPLOY_ALLOW_DIRTY:-}" ]; then
 fi
 GIT_SHA="$(git rev-parse --short=12 HEAD)"
 
-# The DuckDB store is baked into the image (see Dockerfile). It's the pipeline's
-# output and is gitignored, so verify it exists locally before building.
-if [ ! -f "$DB_FILE" ]; then
-  die "$DB_FILE not found. Build it first with ./pipeline/run_ingest.sh (it's baked into the image)."
+# The DuckDB store is rsynced to the server and bind-mounted read-only (NOT baked
+# into the image). It's the pipeline's output and is gitignored, so verify it
+# exists locally before we try to sync it. (Skippable for a code-only deploy.)
+if [ -z "${DEPLOY_SKIP_DB_SYNC:-}" ] && [ ! -f "$DB_FILE" ]; then
+  die "$DB_FILE not found. Build it first with ./pipeline/run_ingest.sh, or set DEPLOY_SKIP_DB_SYNC=1 to deploy code only."
 fi
 
 IMG_LATEST="$IMAGE:$TAG"
@@ -71,7 +75,11 @@ say "App:      $APP  (listens on 0.0.0.0:$PORT inside the container)"
 say "Image:    $IMG_LATEST"
 say "          $IMG_SHA"
 say "Platform: $PLATFORM  (build jobs: $BUILD_JOBS)"
-say "DB:       $DB_FILE ($(du -h "$DB_FILE" | cut -f1)) — baked into the image"
+if [ -z "${DEPLOY_SKIP_DB_SYNC:-}" ]; then
+  say "DB:       $DB_FILE ($(du -h "$DB_FILE" | cut -f1)) → $SSH_HOST:$DATA_DIR (mounted :ro)"
+else
+  say "DB:       sync skipped (DEPLOY_SKIP_DB_SYNC=1) — using whatever is already on the server"
+fi
 
 # ── Build + push (steps 1 & 2) ────────────────────────────────────────────
 # One cross-arch buildx invocation builds for linux/amd64 and pushes both tags.
@@ -107,6 +115,31 @@ if [ "$build_rc" -ne 0 ]; then
 fi
 say "Pushed:  $IMG_LATEST"
 say "         $IMG_SHA"
+
+# ── Sync the DB to the host (mounted read-only into the container) ─────────
+# The container gets the store from a bind mount, not the image, so ship it to
+# the host first. rsync's quick check (size+mtime) makes re-runs a fast no-op
+# when the DB hasn't changed; --partial resumes an interrupted large transfer.
+# Old rsync-compatible flags (macOS ships rsync 2.6.9): no --info=progress2.
+if [ -z "${DEPLOY_SKIP_DB_SYNC:-}" ]; then
+  RSYNC_SSH="ssh -o BatchMode=yes -o ConnectTimeout=15"
+  say "Ensuring $SSH_HOST:$DATA_DIR exists…"
+  ssh -o BatchMode=yes -o ConnectTimeout=15 "$SSH_HOST" "mkdir -p '$DATA_DIR'"
+
+  say "Syncing $DB_FILE → $SSH_HOST:$DATA_DIR/ (skips if unchanged; large files are slow)…"
+  rsync -az --partial --progress -e "$RSYNC_SSH" "$DB_FILE" "$SSH_HOST:$DATA_DIR/"
+
+  # Ship the Loughran-McDonald dictionary CSV(s) too, if present beside the DB —
+  # the app looks for it in the DB's directory for inline word highlighting.
+  shopt -s nullglob
+  lm_csvs=(data/*.csv)
+  shopt -u nullglob
+  if [ "${#lm_csvs[@]}" -gt 0 ]; then
+    say "Syncing dictionary CSV(s): ${lm_csvs[*]}"
+    rsync -az --partial -e "$RSYNC_SSH" "${lm_csvs[@]}" "$SSH_HOST:$DATA_DIR/"
+  fi
+  say "DB in place on the host."
+fi
 
 # ── Roll only this service (step 3) ───────────────────────────────────────
 # First-deploy chicken-and-egg: the service isn't in the stack's compose yet, so
