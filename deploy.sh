@@ -16,6 +16,7 @@
 #   DEPLOY_TAG        latest                    the moving tag (also always tags :<git-sha>)
 #   DEPLOY_STACK_DIR  /home/wolf/stack          remote compose stack dir
 #   DEPLOY_BUILDER    discrepancies             buildx builder name
+#   DEPLOY_BUILD_JOBS 2                         cap C++ build parallelism (lower=less RAM)
 #   DEPLOY_ALLOW_DIRTY unset                    set=1 to skip the clean-tree check
 
 set -euo pipefail
@@ -37,6 +38,7 @@ TAG="${DEPLOY_TAG:-latest}"
 STACK_DIR="${DEPLOY_STACK_DIR:-/home/wolf/stack}"
 BUILDER="${DEPLOY_BUILDER:-discrepancies}"
 PLATFORM="linux/amd64"                                # server is amd64; laptop may be arm64
+BUILD_JOBS="${DEPLOY_BUILD_JOBS:-2}"                  # cap C++ compile parallelism (memory)
 
 DB_FILE="data/subtext.duckdb"
 
@@ -68,7 +70,7 @@ IMG_SHA="$IMAGE:$GIT_SHA"
 say "App:      $APP  (listens on 0.0.0.0:$PORT inside the container)"
 say "Image:    $IMG_LATEST"
 say "          $IMG_SHA"
-say "Platform: $PLATFORM"
+say "Platform: $PLATFORM  (build jobs: $BUILD_JOBS)"
 say "DB:       $DB_FILE ($(du -h "$DB_FILE" | cut -f1)) — baked into the image"
 
 # ── Build + push (steps 1 & 2) ────────────────────────────────────────────
@@ -88,6 +90,7 @@ set +e
 docker buildx build \
   --builder "$BUILDER" \
   --platform "$PLATFORM" \
+  --build-arg "BUILD_JOBS=$BUILD_JOBS" \
   --tag "$IMG_LATEST" \
   --tag "$IMG_SHA" \
   --push \
