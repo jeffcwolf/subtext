@@ -12,6 +12,14 @@
 FROM rust:1-bookworm AS build
 WORKDIR /build
 
+# Compiling bundled DuckDB (C++) is memory-hungry — each unity-build translation
+# unit can need >1 GB, and it's worse under amd64 emulation on an arm64 laptop.
+# Cap parallelism so peak RAM stays bounded and the build doesn't OOM the Docker
+# VM ("cannot allocate memory"). Raise for a faster build if you have the RAM:
+#   docker buildx build --build-arg BUILD_JOBS=4 …   (deploy.sh: DEPLOY_BUILD_JOBS=4)
+ARG BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
+
 # Cache the expensive dependency compile (libduckdb-sys dominates the build) by
 # compiling against the manifests with a stub main first; real sources come
 # after, so day-to-day source edits don't recompile DuckDB.
