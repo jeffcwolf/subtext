@@ -1,0 +1,22 @@
+# Keep the Docker build context small and deterministic. The image only needs
+# site/ (the Rust crate) and the built DuckDB store from data/.
+
+# ─── Build artifacts / VCS / tooling not needed to build the image ───
+**/target
+.git
+.github
+.claude
+skills
+docs
+pipeline
+**/__pycache__
+**/*.py[cod]
+**/.venv
+*.md
+
+# ─── data/: ship ONLY the built store (+ optional LM dictionary CSV) ──
+# This drops the multi-GB raw HuggingFace dataset directories and any WAL
+# sidecar, which would otherwise bloat the build context and the image.
+data/*
+!data/subtext.duckdb
+!data/*.csv
