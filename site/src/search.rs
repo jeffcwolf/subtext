@@ -39,33 +39,52 @@ async fn search(db: &Db, p: &SearchParams) -> anyhow::Result<Vec<SearchHit>> {
     let section = p.section.trim().to_string();
 
     db.call_fts(move |conn| {
-        let mut sql = String::from(
-            "SELECT u.transcript_id, t.ticker, c.name, CAST(t.call_date AS VARCHAR),
-                    u.speaker_name, u.speaker_role, u.section, u.text
-             FROM (
-                 SELECT utterance_id,
-                        fts_main_utterances.match_bm25(utterance_id, ?) AS score
-                 FROM utterances
-             ) sub
-             JOIN utterances u USING (utterance_id)
-             JOIN transcripts t USING (transcript_id)
-             JOIN companies c USING (ticker)
-             WHERE sub.score IS NOT NULL",
-        );
+        // Rank first, fetch text last. The `ranked` CTE scores every utterance
+        // by BM25, applies the filters on lightweight columns, and keeps only
+        // the top 40 (utterance_id, score). Only then does the outer query join
+        // the wide `text` column — for 40 rows instead of the whole matched set.
+        //
+        // The previous shape joined `text` across every match before LIMIT,
+        // which on the memory-capped connection spilled to disk (~15 s/search).
         let mut binds: Vec<Value> = vec![Value::Text(query)];
+
+        let mut ranked = String::from(
+            "SELECT utterance_id, score FROM (
+                 SELECT u.utterance_id, u.transcript_id, u.speaker_role, u.section,
+                        fts_main_utterances.match_bm25(u.utterance_id, ?) AS score
+                 FROM utterances u
+             ) s",
+        );
+        // Join transcripts only when the ticker filter needs it (role/section
+        // live on utterances, already selected above).
         if !ticker.is_empty() {
-            sql.push_str(" AND t.ticker = ?");
+            ranked.push_str(" JOIN transcripts t USING (transcript_id)");
+        }
+        ranked.push_str(" WHERE s.score IS NOT NULL");
+        if !ticker.is_empty() {
+            ranked.push_str(" AND t.ticker = ?");
             binds.push(Value::Text(ticker));
         }
         if !role.is_empty() {
-            sql.push_str(" AND u.speaker_role = ?");
+            ranked.push_str(" AND s.speaker_role = ?");
             binds.push(Value::Text(role));
         }
         if !section.is_empty() {
-            sql.push_str(" AND u.section = ?");
+            ranked.push_str(" AND s.section = ?");
             binds.push(Value::Text(section));
         }
-        sql.push_str(" ORDER BY sub.score DESC LIMIT 40");
+        ranked.push_str(" ORDER BY s.score DESC LIMIT 40");
+
+        let sql = format!(
+            "WITH ranked AS ({ranked})
+             SELECT u.transcript_id, t.ticker, c.name, CAST(t.call_date AS VARCHAR),
+                    u.speaker_name, u.speaker_role, u.section, u.text
+             FROM ranked r
+             JOIN utterances u USING (utterance_id)
+             JOIN transcripts t USING (transcript_id)
+             JOIN companies c USING (ticker)
+             ORDER BY r.score DESC"
+        );
 
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(binds.iter()), |r| {
