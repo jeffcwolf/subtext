@@ -24,7 +24,7 @@ pub struct Db {
 ///     on a read-only mount, so DuckDB's default temp location (beside the file)
 ///     is unwritable — without this, a query that needs to spill can't, and
 ///     falls back to exhausting RAM.
-///   * `threads` matches the 2-vCPU box so we don't oversubscribe.
+///   * `threads` matches the host's vCPU count so we don't oversubscribe.
 ///
 /// Best-effort: a settings hiccup must never break page loads, and the
 /// container's cgroup memory limit (set in compose) is the hard backstop
@@ -33,7 +33,7 @@ fn open_tuned(path: &Path) -> anyhow::Result<Connection> {
     let config = Config::default().access_mode(AccessMode::ReadOnly)?;
     let conn = Connection::open_with_flags(path, config)?;
     if let Err(e) =
-        conn.execute_batch("SET memory_limit='512MB'; SET threads=2; SET temp_directory='/tmp';")
+        conn.execute_batch("SET memory_limit='512MB'; SET threads=3; SET temp_directory='/tmp';")
     {
         eprintln!("warning: could not apply DuckDB memory guardrails: {e}");
     }
