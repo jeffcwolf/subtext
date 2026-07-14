@@ -43,6 +43,25 @@ RUN rm -f target/release/subtext \
  && touch src/*.rs \
  && cargo build --release --locked
 
+# Fetch the DuckDB `fts` extension that matches the bundled DuckDB version, so
+# the runtime can LOAD it offline for BM25 search (the app calls `LOAD fts`; we
+# don't want the container reaching extensions.duckdb.org per query). This is the
+# official *signed* build, so a plain `LOAD fts` verifies and loads it — no
+# allow_unsigned_extensions needed. The version/platform must match the path the
+# runtime reports: if the duckdb crate is bumped, update DUCKDB_VERSION to the
+# new "extensions/<version>/linux_amd64" the runtime asks for.
+ARG DUCKDB_VERSION=v1.5.4
+ARG DUCKDB_PLATFORM=linux_amd64
+RUN set -eu; \
+    dir="/duckdb-ext/${DUCKDB_VERSION}/${DUCKDB_PLATFORM}"; \
+    rel="${DUCKDB_VERSION}/${DUCKDB_PLATFORM}/fts.duckdb_extension.gz"; \
+    mkdir -p "$dir"; \
+    curl -fsSL --retry 3 "https://extensions.duckdb.org/${rel}" -o /tmp/fts.gz \
+      || curl -fsSL --retry 3 "http://extensions.duckdb.org/${rel}" -o /tmp/fts.gz; \
+    gunzip -c /tmp/fts.gz > "$dir/fts.duckdb_extension"; \
+    rm -f /tmp/fts.gz; \
+    test -s "$dir/fts.duckdb_extension"
+
 # ---- runtime stage: slim, non-root, DB baked in --------------------------
 FROM debian:bookworm-slim AS runtime
 # The binary dynamically links glibc + libstdc++ (from the bundled C++ objects);
@@ -54,6 +73,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /build/target/release/subtext /usr/local/bin/subtext
+
+# Bake the fts extension where DuckDB looks for it: $HOME/.duckdb/extensions/
+# <version>/<platform>/. HOME resolves to /app (the app user's home), which is
+# exactly the path the runtime reported as missing. Enables the app's `LOAD fts`
+# (BM25 search) offline.
+COPY --from=build /duckdb-ext /app/.duckdb/extensions
+RUN chown -R app:app /app/.duckdb
 
 # The analytical store (~3.5 GB) is NOT baked into the image — that would make a
 # ~3.6 GB image and needs ~7 GB transiently on the server to pull+extract, which
