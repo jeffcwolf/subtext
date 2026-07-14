@@ -46,12 +46,17 @@ async fn search(db: &Db, p: &SearchParams) -> anyhow::Result<Vec<SearchHit>> {
         //
         // The previous shape joined `text` across every match before LIMIT,
         // which on the memory-capped connection spilled to disk (~15 s/search).
+        //
+        // `conjunctive := 1` requires a document to contain ALL query terms
+        // (AND) rather than any (OR): fewer candidates to score and join (so
+        // faster), and more relevant results for multi-word queries. Single-word
+        // queries are unaffected.
         let mut binds: Vec<Value> = vec![Value::Text(query)];
 
         let mut ranked = String::from(
             "SELECT utterance_id, score FROM (
                  SELECT u.utterance_id, u.transcript_id, u.speaker_role, u.section,
-                        fts_main_utterances.match_bm25(u.utterance_id, ?) AS score
+                        fts_main_utterances.match_bm25(u.utterance_id, ?, conjunctive := 1) AS score
                  FROM utterances u
              ) s",
         );
