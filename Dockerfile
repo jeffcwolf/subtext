@@ -32,7 +32,16 @@ RUN mkdir src \
 COPY site/src ./src
 COPY site/style ./style
 # Real build — deps stay cached from the layer above; only our crate recompiles.
-RUN cargo build --release --locked
+#
+# CRITICAL: BuildKit normalizes copied-file mtimes to a fixed past date, so cargo
+# can think these real sources predate the stub binary built above and skip the
+# rebuild — silently shipping the `println!("stub")` placeholder. `touch` the
+# sources so their mtime is newer and cargo recompiles the real crate. Deleting
+# the stub binary first turns any residual skip into a loud COPY failure below
+# instead of a stub that boots and exits.
+RUN rm -f target/release/subtext \
+ && touch src/*.rs \
+ && cargo build --release --locked
 
 # ---- runtime stage: slim, non-root, DB baked in --------------------------
 FROM debian:bookworm-slim AS runtime
